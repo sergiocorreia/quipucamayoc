@@ -94,5 +94,5 @@ Quipucamayoc is developed under the [GNU Affero GPL v3 license](https://www.gnu.
 The _quipucamayocs_ were the Inca empire officials in charge of desciphering (amonst other things) accounting information stored in quipus. Our goal for this package is to act as a sort of quipucamayoc, helping researchers in desciphering and extracting historical information, particularly balance sheets and numerical records.
 
 <p align="center">
-  <img src="https://github.com/sergiocorreia/quipucamayoc2/blob/master/docs/quipucamayoc.png?raw=true" />
+  <a href="https://en.wikipedia.org/wiki/Quipu" rel="quipu"><img src="https://github.com/sergiocorreia/quipucamayoc2/blob/master/docs/quipucamayoc.png?raw=true" /></a>
 </p>
