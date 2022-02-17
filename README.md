@@ -87,3 +87,12 @@ It is also relies for most of its work on the following open source projects:
 ## License
 
 Quipucamayoc is developed under the [GNU Affero GPL v3 license](https://www.gnu.org/licenses/agpl-3.0.en.html).
+
+
+## Why "quipucamayoc"?
+
+The _quipucamayocs_ were the Inca empire officials in charge of desciphering (amonst other things) accounting information stored in quipus. Our goal for this package is to act as a sort of quipucamayoc, helping researchers in desciphering and extracting historical information, particularly balance sheets and numerical records.
+
+<p align="center">
+  <img src="https://github.com/sergiocorreia/quipucamayoc2/blob/master/docs/quipucamayoc.png?raw=true" />
+</p>
