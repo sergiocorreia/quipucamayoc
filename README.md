@@ -56,7 +56,7 @@ Sergio Correia, Stephan Luck: “Digitizing Historical Balance Sheet Data: A Pra
 </li>
 </ul>
 
-TODO: POST NEW VERSION OF PAPER IN ARXIV AND CHANGE ARXIV LINK. ALSO UPDATE BOTH BIBTEX LINKS!
+[TODO: post in arxiv, update links]
 
 #### As BibTex
 
