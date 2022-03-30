@@ -15,4 +15,4 @@ __pycache__/
 /htmlcov/
 /docs/_build/
 
-textract-*/*
+textract-*/
