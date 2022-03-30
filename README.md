@@ -39,6 +39,39 @@ After cloning the repo to your computer and navigating to the quipucamayoc folde
 - `python setup.py develop` to install locally with a symlink so changes are automatically updated (recommended for developers)
 
 
+## After installation
+
+### AWS
+
+AWS configuration is quite cumbersome, so it has been automated. To do so, follow these four steps:
+
+1. [Download](https://aws.amazon.com/cli/) and install the `aws` command line interface (CLI).  *Update: `quipucamayoc` installs the `awscli` package so this step might not be necessary anymore*.
+2. [Configure](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html) your credentials with `aws configure`. This requires an Amazon/AWS account.
+3. From the command line, run the quipucamayoc command `quipu install aws`
+4. (Optional) From the command line, run the quipucamayoc command `quipu test aws`
+
+Notes:
+
+- You can avoid step 1 by directly [writing your credentials[(https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)] to the `credentials` file.
+- Steps 3-4 are also available from within Python in the `setup_textract()` and `test_textract()` functions.
+- If you want to remove all quipucamayoc artifacts from your AWS account, you can run `quipu uninstall aws` from the command line.
+- The default [AWS region](https://www.concurrencylabs.com/blog/choose-your-aws-region-wisely/) is `aws-east-1`. To use other regions, use the `--region <name>` option.
+
+
+## Usage
+
+writeme
+
+
+## TODO
+
+- [x] Automatically set up Textract pipeline
+- [ ] Expose key functions as command line tools
+- [ ] Allow parallel (async?) tasks. Useful for OpenCV (CPU-intensive) and Textract calls (IO-intensive). Consider also [uvloop](https://github.com/MagicStack/uvloop)
+- [ ] Include Poppler by default on Windows
+- [ ] Add mypy/(flake8|black)
+
+
 ## Contributing
 
 Feel free to submit push requests. For consistency, code should comply with [pep8](https://pypi.python.org/pypi/pep8) (as long as its reasonable), and with the style guides by [@kennethreitz](http://docs.python-guide.org/en/latest/writing/style/) and [google](http://google.github.io/styleguide/pyguide.html). Read more [here](/CONTRIBUTING.md).
