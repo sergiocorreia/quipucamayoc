@@ -45,7 +45,7 @@ from .aws_setup import QUIPU
 def filename2document(filename):
     assert isinstance(filename, Path)
     extension = filename.suffix[1:]
-    assert extension in ('pdf', 'png', 'jpg'), extension  # TODO: handle unusual cases like .jpeg and .PDF (upper case)
+    assert extension in ('pdf', 'png', 'jpg', 'tiff'), extension  # TODO: handle unusual cases like .jpeg and .PDF (upper case)
     document = f'{extension}/{filename.name}'
     return document
 
@@ -68,7 +68,7 @@ def upload_file(filename, config, logger):
     
     document = filename2document(filename)
     bucket = config.bucket
-    s3_client = boto3.client('s3', region_name=config.region)
+    s3_client = config.session.client('s3')
     viewable_url = f'https://s3.console.aws.amazon.com/s3/buckets/{config.bucket}/{filename.suffix[1:]}/?region={config.region}'
     logger.info(f'Uploading file "{filename.name}" to bucket "{bucket}"')
     key_exists = document_exists_in_bucket(document, bucket, s3_client, logger)
@@ -84,7 +84,7 @@ def upload_file(filename, config, logger):
 def delete_file(filename, config, logger):
     document = filename2document(filename)
     bucket = config.bucket
-    s3_client = boto3.client('s3', region_name=config.region)
+    s3_client = config.session.client('s3')
     logger.info(f'Deleting file "{filename.name}" from bucket "{bucket}"')
     key_exists = document_exists_in_bucket(document, bucket, s3_client, logger)
 
@@ -142,7 +142,7 @@ def run_textract_async(filename, request_token, config, logger):
     
     logger.info(f'Starting async textract job for "{filename}"')
     document = filename2document(filename)
-    textract_client = boto3.client('textract', region_name=config.region)
+    textract_client = config.session.client('textract')
     logger.info(f' - Document = {document}')
     logger.info(f' - ClientRequestToken = {request_token}')
 
@@ -164,37 +164,40 @@ def wait(attempt):
     if attempt % 20 == 0:
         if attempt:
             print()
+            return False
     else:
         print('.', end='')
         sys.stdout.flush()
         time.sleep(2) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
+        return True
 
 
 def wait_textract_async(filename, job_id, output_path, config, logger):
 
     logger.info('Waiting for job completion:')
-    tic = time.process_time()
-    sqs_client = boto3.client('sqs', region_name=config.region)
+    tic = time.perf_counter()
+    sqs_client = config.session.client('sqs')
     max_attempts = 3600
 
-    try:
-        succeeded = download_and_save_tables(job_id, output_path, config, logger)
-        if succeeded:
-            return
-        else:
-            logger.info(' - Job ID not yet on Textract')
-    except boto3.client('textract').exceptions.InvalidJobIdException:
-        logger.info(' - Job ID not yet on Textract (InvalidJobIdException)')
+    #try:
+    #    succeeded = download_and_save_tables(job_id, output_path, config, logger)
+    #    if succeeded:
+    #        return
+    #    else:
+    #        logger.info(' - Job ID not yet on Textract')
+    #except config.session.client('textract').exceptions.InvalidJobIdException:
+    #    logger.info(' - Job ID not yet on Textract (InvalidJobIdException)')
 
     logger.info(' - Waiting in queue for messages...')
+    has_dots = False
 
     for attempt in range(max_attempts):
         sqs_response = sqs_client.receive_message(QueueUrl=config.queue_url, MessageAttributeNames=['ALL'], MaxNumberOfMessages=10)
         if sqs_response:
             if 'Messages' not in sqs_response:
-                wait(attempt)
+                has_dots = wait(attempt)
                 continue
-            else:
+            elif has_dots:
                 print()
 
             for message in sqs_response['Messages']:
@@ -202,18 +205,19 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
                 notification = json.loads(message['Body'])
                 text_message = json.loads(notification['Message'])
                 received_job_id = text_message['JobId']
-                logger.info(' -  Job ID from message:', received_job_id)
-                logger.info(' - Message status:', text_message['Status'])
+                logger.info(f'   Job ID from message: {received_job_id}')
+                logger.info(f"   Message status: {text_message['Status']}")
 
                 if job_id == received_job_id:
                     logger.success(' - Matching Job Found:' + job_id)
                     job_found = True
-                    toc = time.process_time()
-                    logger.info(f' - Elapsed time: {toc - tic}')
+                    toc = time.perf_counter()
+                    logger.info(f' - Elapsed time: {toc - tic:6.2f}s')
                     download_and_save_tables(job_id, output_path, config, logger)
-                    sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
+                    sqs_client.delete_message(QueueUrl=config.queue_url, ReceiptHandle=message['ReceiptHandle'])
+                    return
                 else:
-                    logger.info(f' - Job didn\'t match: "{job_id}" vs "{received_job_id}"')
+                    logger.info(f'   Job didn\'t match: "{job_id}" vs "{received_job_id}"')
 
 
 def download_and_save_tables(job_id, path, config, logger):
@@ -223,7 +227,7 @@ def download_and_save_tables(job_id, path, config, logger):
     TODO: for documents in multiple images, allow to save as {file}-{table}
     '''
 
-    textract_client = boto3.client('textract', region_name=config.region)
+    textract_client = config.session.client('textract')
     max_results = 1000  # Maximum number of blocks returned per request (1-1000)
     pagination_token = None  # Allows us to retrieve the next set of blocks (1-255)
 
@@ -346,10 +350,10 @@ def get_text(result, blocks_map):
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False):
+def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False):
 
     # Logging details
-    log_format = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
+    log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
     logger.remove()
     logger.add(sys.stderr, format=log_format, colorize=True, level="INFO") # TRACE DEBUG INFO SUCCESS WARNING ERROR CRITICAL
 
@@ -360,11 +364,11 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
     if (directory is not None) and (extension is None):
         raise SystemExit("Error: --directory option requires --extension")
     if (extension is not None):
-        assert extension in ('pdf', 'png', 'jpg')
+        assert extension in ('pdf', 'png', 'jpg', 'tiff')
 
     # Configuration details
     config = QUIPU()
-
+    config.session = boto3.Session(profile_name='quipucamayoc', region_name=config.region) # Avoid specifying region_name for every client
 
     # [1] Single files (PDFs or images)
     if filename is not None:
@@ -372,7 +376,7 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
         output_path = filename.parent / ('textract-' + filename.stem)
         output_path.mkdir(exist_ok=True)
         done_path = output_path / (filename.stem + '.done')
-        is_done = done_path.is_file()
+        is_done = done_path.is_file() and not ignore_cache
 
         if is_done:
             logger.success(f'File "{filename}" already processed; skipping')

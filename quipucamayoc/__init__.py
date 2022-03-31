@@ -14,10 +14,10 @@ from .aws_setup import install_aws
 from .aws_setup import uninstall_aws
 
 
-def extract_tables(filename=None, directory=None, extension=None, engine='aws'):
+def extract_tables(filename=None, directory=None, extension=None, engine='aws', ignore_cache=False):
 	assert engine in ('aws',)
 	if engine == 'aws':
-		aws_extract_tables(filename, directory, extension)
+		aws_extract_tables(filename=filename, directory=directory, extension=extension, ignore_cache=ignore_cache)
 	else:
 		raise Exception
 	print('DONE!')

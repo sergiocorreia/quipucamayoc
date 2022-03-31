@@ -17,6 +17,7 @@ AWS URLs:
 # ---------------------------
 
 import os
+import re
 import sys
 import errno
 import time # not used
@@ -43,7 +44,7 @@ from loguru import logger
 class QUIPU:
 
     user = 'Quipu'
-    bucket = 'quipu-bucket'
+    bucket_prefix = 'quipu-'
     queue = 'quipu-queue'
     topic = 'AmazonTextractQuipu'
     role = 'quipu-textract'
@@ -69,8 +70,30 @@ class QUIPU:
         self.queue_arn = None
         self.subscription_arn = None
 
+        # Problem: S3 buckets must be GLOBALLY UNIQUE
+        # i.e., other users can't have use the same bucket name
+        # To see if a bucket exists, go to https://<BUCKETNAME>.s3.amazonaws.com/
+        # and see if the error message is AccessDenied or NoSuchBucket
+        self.bucket = self.bucket_prefix + self.account_id
+
         # Sanity checks
         assert self.topic.startswith('AmazonTextract')
+        self.validate_bucket()
+
+
+    def validate_bucket(self):
+        # https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+        # 1) Bucket names must be between 3 (min) and 63 (max) characters long.
+        assert 3 <= len(self.bucket) <= 63
+        # 2) Bucket names can consist only of lowercase letters, numbers, dots (.), and hyphens (-).
+        invalid_characters = re.sub('[a-z0-9.-]', '', self.bucket)
+        assert not invalid_characters
+        # 3) Bucket names must begin and end with a letter or number.
+        assert self.bucket[0] not in ('.', '-')
+        assert self.bucket[-1] not in ('.', '-')
+
+
+
 
 
 # ---------------------------
@@ -151,7 +174,8 @@ def set_user_permissions(quipu, iam_client, logger):
     resources = [f'arn:aws:s3:::{quipu.bucket}', f'arn:aws:s3:::{quipu.bucket}/*']
     statement1 = {'Effect': 'Allow', 'Action': 's3:*', 'Resource': resources}
     statement2 = {'Effect': 'Deny', 'NotAction': 's3:*', 'NotResource': resources}
-    policy_json = json.dumps({'Version': '2012-10-17', 'Statement': [statement1, statement2]})
+    policy_json = json.dumps({'Version': '2012-10-17', 'Statement': [statement1]})
+    #policy_json = json.dumps({'Version': '2012-10-17', 'Statement': [statement1, statement2]}) # BUGBUG
     iam_client.put_user_policy(UserName=quipu.user, PolicyName='QuipuAllowS3', PolicyDocument=policy_json)
 
     # Create custom inline policy
@@ -172,18 +196,24 @@ def set_user_permissions(quipu, iam_client, logger):
     return access_key_id, secret_access_key
 
 
-def create_bucket(quipu, s3_client, logger):
-    logger.info(f'Creating bucket "{quipu.bucket}"')
-    
+def delete_bucket_and_contents(quipu, s3_client, logger, no_bucket_message=False):
     # Retrieve the list of existing buckets
     response = s3_client.list_buckets()
     buckets = [bucket['Name'] for bucket in response['Buckets']]
-    
+
     # Delete bucket if needed
     if quipu.bucket in buckets:
         logger.info(f'  - Bucket "{quipu.bucket}" exists; deleting it')
+        boto3.resource('s3').Bucket(quipu.bucket).objects.delete()
         s3_client.delete_bucket(Bucket=quipu.bucket) # , ExpectedBucketOwner=quipu.user)
-    
+    elif no_bucket_message:
+        logger.info(f" - S3 bucket did not exist")
+
+
+def create_bucket(quipu, s3_client, logger):
+    logger.info(f'Creating bucket "{quipu.bucket}"')
+    delete_bucket_and_contents(quipu, s3_client, logger)
+
     # Workaround for AWS/BOTO3 bug:
     # If the location is us-east-1 (the default) then we CANNOT pass the location
     # See: https://github.com/boto/boto3/issues/125
@@ -196,9 +226,26 @@ def create_bucket(quipu, s3_client, logger):
     config = {'BlockPublicAcls': True, 'IgnorePublicAcls': True, 'BlockPublicPolicy': True, 'RestrictPublicBuckets': True}
     s3_client.put_public_access_block(Bucket=quipu.bucket, PublicAccessBlockConfiguration=config)
 
+def delete_sns_topic(quipu, sns_client, logger):
+    topic_arn = f'arn:aws:sns:{quipu.region}:{quipu.account_id}:{quipu.topic}'
+    r = sns_client.list_topics()
+    topics = [topic['TopicArn'] for topic in r['Topics']]
+    if topic_arn in topics:
+        logger.info('  - Deleted SNS topic')
+        sns_client.delete_topic(TopicArn=topic_arn)
+
+    # Can't use list_subscriptions_by_topic() b/c topic might not exist anymore
+    r = sns_client.list_subscriptions()
+    subscriptions = [s['SubscriptionArn'] for s in r['Subscriptions'] if s['TopicArn']==topic_arn]
+    if subscriptions:
+        logger.info(f'  - Deleted {len(subscriptions)} SNS topic subscriptions')
+        for subscription in subscriptions:
+            boto3.resource('sns').Subscription(subscription).delete()
+
 
 def create_sns_topic(quipu, sns_client, logger):
     logger.info(f'Creating SNS topic "{quipu.topic}"...')
+    delete_sns_topic(quipu, sns_client, logger)
     r = sns_client.create_topic(Name=quipu.topic)
     assert quipu.topic_arn == r['TopicArn']
     logger.info(f'  - SNS topic ARN = "{quipu.topic_arn}"')
@@ -236,28 +283,38 @@ def subscribe_queue_to_topic(quipu, sns_client, logger):
 def allow_topic_in_queue(quipu, sqs_client, logger):
     logger.info(f'Giving SNS topic permission to message SQS queue...')
     statement = {'Sid': 'QuipuSendMessage',
-                 'Action': 'SQS:SendMessage',
+                 'Action': 'SQS:*', # 'Action': 'SQS:SendMessage',
                  'Effect': 'Allow',
-                 'Principal': {'AWS': '*'},  # TODO: Restrict to only quipu.account_id
+                 'Principal': '*', #'Principal': {'AWS': '*'},  # TODO: Restrict to only quipu.account_id
                  'Resource': quipu.queue_arn,
                  'Condition': {'ArnEquals': {'aws:SourceArn': quipu.topic_arn}}}
     policy_json = json.dumps({'Version': '2012-10-17', 'Statement': [statement]})
     sqs_client.set_queue_attributes(QueueUrl=quipu.queue_url, Attributes={'Policy': policy_json})
 
 
-def create_iam_role(quipu, iam_client, logger):
-    # See also: https://medium.com/geekculture/automating-aws-iam-using-lambda-and-boto3-part-3-3100088a4454
-    logger.info(f'Creating IAM role so Textract can access SNS topics...')
-
+def delete_iam_role(quipu, iam_client, logger):
     logger.info('  - Retrieving list of IAM roles')    
     r = iam_client.list_roles()
     roles = [role['RoleName'] for role in r['Roles']]
     if quipu.role in roles:
         logger.info(f'  - Role "{quipu.role}" exists; deleting it')
+
+        logger.info(f'    Detaching policies')
+        policies = iam_client.list_attached_role_policies(RoleName=quipu.role)
+        policies = [p['PolicyArn'] for p in policies['AttachedPolicies']]
+        for policy in policies:
+            iam_client.detach_role_policy(RoleName=quipu.role, PolicyArn=policy)
+        
+        logger.info(f'    Deleting role')
         iam_client.delete_role(RoleName=quipu.role)
     else:
         logger.info(f'  - Role "{quipu.role}" does not exist')
 
+
+def create_iam_role(quipu, iam_client, logger):
+    # See also: https://medium.com/geekculture/automating-aws-iam-using-lambda-and-boto3-part-3-3100088a4454
+    logger.info(f'Creating IAM role so Textract can access SNS topics...')
+    delete_iam_role(quipu, iam_client, logger)
     statement = {'Effect': 'Allow',
                  'Principal': {'Service': 'textract.amazonaws.com'},
                  'Action': 'sts:AssumeRole'}
@@ -266,6 +323,9 @@ def create_iam_role(quipu, iam_client, logger):
                                AssumeRolePolicyDocument=policy_json,
                                Description='Allows AWS Textract to call other AWS services on your behalf')
     assert quipu.role_arn == r['Role']['Arn']
+
+    # Attach managed textract policy to role
+    iam_client.attach_role_policy(RoleName=quipu.role, PolicyArn='arn:aws:iam::aws:policy/service-role/AmazonTextractServiceRole')
 
 
 def add_credentials_to_file(quipu, access_key_id, secret_access_key, logger):
@@ -302,11 +362,11 @@ def delete_credentials(quipu):
 
     if quipu.credentials_section in config.sections():
         config.remove_section(quipu.credentials_section)
-        print(' - Credentials removed from file')
+        logger.info('  - Credentials removed from file')
         with open(credentials_fn, 'w') as f:
             config.write(f)
     else:
-        print(' - Credentials did not exist on file')
+        logger.info('  - Credentials did not exist on file')
 
 
 # ---------------------------
@@ -318,7 +378,8 @@ def install_aws():
 
     # Logging details
     #log_format = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
-    log_format = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
+    #log_format = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
+    log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
     logger.remove()
     logger.add(sys.stderr, format=log_format, colorize=True, level="DEBUG") # TRACE DEBUG INFO SUCCESS WARNING ERROR CRITICAL
 
@@ -371,6 +432,10 @@ def uninstall_aws():
     '''Clear up all Quipucamayoc settings from AWS'''
     print('Cleaning up quipucamayoc from AWS:')
 
+    log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
+    logger.remove()
+    logger.add(sys.stderr, format=log_format, colorize=True, level="DEBUG") # TRACE DEBUG INFO SUCCESS WARNING ERROR CRITICAL
+
     quipu = QUIPU()
 
     # Clients
@@ -381,42 +446,43 @@ def uninstall_aws():
     sqs_client = session.client('sqs')
 
     # Delete SNS topic
-    expected_topic_arn = f'arn:aws:sns:{quipu.region}:{quipu.account_id}:{quipu.topic}'
-    r = sns_client.list_topics()
-    topics = [topic['TopicArn'] for topic in r['Topics']]
-    if expected_topic_arn in topics:
-        print(' - Deleted SNS topic')
-        sns_client.delete_topic(TopicArn=expected_topic_arn)
+    delete_sns_topic(quipu, sns_client, logger)
 
     # Delete SQS queue
     try:
         sqs_client.delete_queue(QueueUrl=quipu.queue)
-        print(' - Deleted SQS bucket')
+        logger.info('  - Deleted SQS queue')
     except ClientError as e:
-        print(f" - SQS bucket did not exist ({e.response['Error']['Code']})")
+        logger.info(f"  - SQS queue did not exist ({e.response['Error']['Code']})")
 
     # Delete IAM role
     try:
-        iam_client.delete_role(RoleName=quipu.role)
-        print(' - Deleted IAM role')
+        delete_iam_role(quipu, iam_client, logger)
+        logger.info('  - Deleted IAM role')
     except ClientError as e:
-        print(f" - IAM role did not exist ({e.response['Error']['Code']})")
+        logger.info(f"  - IAM role did not exist ({e.response['Error']['Code']})")
 
     # Delete user
     try:
         delete_user(quipu, iam_client, logger)
-        print(' - Deleted user')
+        logger.info('  - Deleted user')
     except ClientError as e:
-        print(f" - User did not exist ({e.response['Error']['Code']})")
+        logger.info(f"  - User did not exist ({e.response['Error']['Code']})")
 
     # Delete bucket
-    try:
-        s3_client.delete_bucket(Bucket=quipu.bucket)
-    except ClientError as e:
-        print(f" - S3 bucket not exist ({e.response['Error']['Code']})")
+    delete_bucket_and_contents(quipu, s3_client, logger, no_bucket_message=True)
+    #try:
+    #    s3_client.delete_bucket(Bucket=quipu.bucket)
+    #except ClientError as e:
+    #    error_code = e.response['Error']['Code']
+    #    if error_code == '???BucketNotEmpty???':
+    #        print(f" - S3 bucket did not exist ({e.response['Error']['Code']})")
+    #    else:
+    #        raise e
 
     # Delete credentials
     delete_credentials(quipu)
+    logger.success(' - All quipucamayoc-related settings removed from AWS account')
 
 
 # ---------------------------
