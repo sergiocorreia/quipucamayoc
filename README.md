@@ -1,3 +1,5 @@
+[NOTE: THIS PACKAGE IS STILL IN ALPHA STAGE AS WE ARE MIGRATING COMPONENTS FROM OLD REPO AND REFACTORING THEM]
+
 # Quipucamayoc: tools for digitizing historical data
 
 [![Development Status](https://img.shields.io/pypi/status/quipucamayoc.svg)](https://pypi.python.org/pypi/quipucamayoc/)
