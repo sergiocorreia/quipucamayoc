@@ -9,15 +9,7 @@ such as balance sheets or price lists.
 """
 
 from .version import __version__
+from .cli import cli
 from .aws_extract_tables import aws_extract_tables
 from .aws_setup import install_aws
 from .aws_setup import uninstall_aws
-
-
-def extract_tables(filename=None, directory=None, extension=None, engine='aws', ignore_cache=False):
-	assert engine in ('aws',)
-	if engine == 'aws':
-		aws_extract_tables(filename=filename, directory=directory, extension=extension, ignore_cache=ignore_cache)
-	else:
-		raise Exception
-	print('DONE!')

@@ -117,7 +117,7 @@ def hash_file(filename):
     h.hexdigest()
     readable_hash = h.hexdigest()[:16] # Pick 8, 16, or maybe 32 (overkill)
     
-    full_hash = f'{salt}--{readable_hash}'
+    full_hash = f'{salt}-{readable_hash}'
     assert len(full_hash) <= 64
     return full_hash
 
@@ -393,16 +393,15 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
         wait_textract_async(filename, job_id, output_path, config, logger)
 
         done_path.touch()
-
         print()
         print(f'File "{filename}" processed!')
-
         exit()
 
 
     # [2] and [3] Folders
     directory = Path(directory)
     filenames = directory.glob(f'*.{extension}')
+    raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
 
 
     # [2] Folders with multiple PDFs
@@ -410,7 +409,7 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
         for filename in filenames:
             print(f'{filename=}')
             assert filename.is_file()
-            print('TODO')
+            raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
         exit()
 
 
@@ -418,5 +417,4 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
     for filename in filenames:
         print(f'{filename=}')
         assert filename.is_file()
-        print('TODO')
-
+        raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")

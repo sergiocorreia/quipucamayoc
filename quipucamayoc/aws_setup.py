@@ -285,7 +285,7 @@ def allow_topic_in_queue(quipu, sqs_client, logger):
     statement = {'Sid': 'QuipuSendMessage',
                  'Action': 'SQS:*', # 'Action': 'SQS:SendMessage',
                  'Effect': 'Allow',
-                 'Principal': '*', #'Principal': {'AWS': '*'},  # TODO: Restrict to only quipu.account_id
+                 'Principal': '*', #'Principal': {'AWS': '*'},  # BUGBUG: Restrict to only quipu.account_id
                  'Resource': quipu.queue_arn,
                  'Condition': {'ArnEquals': {'aws:SourceArn': quipu.topic_arn}}}
     policy_json = json.dumps({'Version': '2012-10-17', 'Statement': [statement]})
@@ -490,6 +490,4 @@ def uninstall_aws():
 # ---------------------------
 
 if __name__ == '__main__':
-    #setup_textract()
-    #install_aws()
     pass
