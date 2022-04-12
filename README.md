@@ -1,5 +1,3 @@
-[NOTE: THIS PACKAGE IS STILL IN ALPHA STAGE AS WE ARE MIGRATING COMPONENTS FROM OLD REPO AND REFACTORING THEM]
-
 # Quipucamayoc: tools for digitizing historical data
 
 [![Development Status](https://img.shields.io/pypi/status/quipucamayoc.svg)](https://pypi.python.org/pypi/quipucamayoc/)
@@ -37,8 +35,8 @@ Note that `quipucamayoc` has been tested against Python 3.10 and newer versions,
 
 After cloning the repo to your computer and navigating to the quipucamayoc folder, run:
 
-- `python setup.py install` to install the package locally
-- `python setup.py develop` to install locally with a symlink so changes are automatically updated (recommended for developers)
+- `pip install .` to install the package locally
+- `pip install -e .` to install locally with a symlink so changes are automatically updated (recommended for developers)
 
 
 ## After installation
@@ -49,20 +47,20 @@ AWS configuration is quite cumbersome, so it has been automated. To do so, follo
 
 1. [Download](https://aws.amazon.com/cli/) and install the `aws` command line interface (CLI).  *Update: `quipucamayoc` installs the `awscli` package so this step might not be necessary anymore*.
 2. [Configure](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html) your credentials with `aws configure`. This requires an Amazon/AWS account.
-3. From the command line, run the quipucamayoc command `quipu install aws`
-4. (Optional) From the command line, run the quipucamayoc command `quipu test aws`
+3. From the command line, run the quipucamayoc command `quipu aws install`
+
 
 Notes:
 
 - You can avoid step 1 by directly [writing your credentials[(https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)] to the `credentials` file.
 - Steps 3-4 are also available from within Python in the `setup_textract()` and `test_textract()` functions.
-- If you want to remove all quipucamayoc artifacts from your AWS account, you can run `quipu uninstall aws` from the command line.
+- If you want to remove all quipucamayoc artifacts from your AWS account, you can run `quipu aws uninstall` from the command line.
 - The default [AWS region](https://www.concurrencylabs.com/blog/choose-your-aws-region-wisely/) is `aws-east-1`. To use other regions, use the `--region <name>` option.
 
 
 ## Usage
 
-writeme
+- From the command line, you can extract tables using AWS via `quipu extract-tables --filename <myfile.pdf>`
 
 
 ## TODO
@@ -87,11 +85,10 @@ Feel free to submit push requests. For consistency, code should comply with [pep
 
 <ul>
 <li>
-Sergio Correia, Stephan Luck: “Digitizing Historical Balance Sheet Data: A Practitioner's Guide”, 2022; <a href='http://arxiv.org/abs/1903.01633'>arXiv:1903.01633</a>.
+Sergio Correia, Stephan Luck: “Digitizing Historical Balance Sheet Data: A Practitioner's Guide”, 2022; <a href='http://arxiv.org/abs/2204.00052'>arXiv:2204.00052</a>.
 </li>
 </ul>
 
-[TODO: post in arxiv, update links]
 
 #### As BibTex
 
@@ -100,8 +97,8 @@ Sergio Correia, Stephan Luck: “Digitizing Historical Balance Sheet Data: A Pra
   Author = {Correia, Sergio and Luck, Stephan},
   Title = {Digitizing Historical Balance Sheet Data: A Practitioner's Guide},
   Year = {2022},
-  eprint = {arXiv:1903.01633},
-  journal={arXiv preprint arXiv:1903.01633}
+  eprint = {arXiv:2204.00052},
+  journal={arXiv preprint arXiv:2204.00052}
 }
 ```
 
