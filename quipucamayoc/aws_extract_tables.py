@@ -179,14 +179,15 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
     sqs_client = config.session.client('sqs')
     max_attempts = 3600
 
-    #try:
-    #    succeeded = download_and_save_tables(job_id, output_path, config, logger)
-    #    if succeeded:
-    #        return
-    #    else:
-    #        logger.info(' - Job ID not yet on Textract')
-    #except config.session.client('textract').exceptions.InvalidJobIdException:
-    #    logger.info(' - Job ID not yet on Textract (InvalidJobIdException)')
+    try:
+        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger)
+        if succeeded:
+            logger.warning(' - Job ID already existed on Textract; perhaps due to an early aborted run')
+            return
+        else:
+            pass # logger.info(' - Job ID not yet on Textract')
+    except config.session.client('textract').exceptions.InvalidJobIdException:
+        logger.info(' - Job ID not yet on Textract (InvalidJobIdException)')
 
     logger.info(' - Waiting in queue for messages...')
     has_dots = False
@@ -213,7 +214,9 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
                     job_found = True
                     toc = time.perf_counter()
                     logger.info(f' - Elapsed time: {toc - tic:6.2f}s')
-                    download_and_save_tables(job_id, output_path, config, logger)
+                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger)
+                    if not succeeded:
+                        raise Exception(f"AWS Textract job status did not succeed (job-status='job_status')")
                     sqs_client.delete_message(QueueUrl=config.queue_url, ReceiptHandle=message['ReceiptHandle'])
                     return
                 else:
@@ -246,7 +249,7 @@ def download_and_save_tables(job_id, path, config, logger):
             job_status = response['JobStatus']
             assert job_status in ('IN_PROGRESS', 'SUCCEEDED', 'FAILED'), job_status
             if job_status != 'SUCCEEDED':
-                return False # Need to wait for the notification
+                return False, job_status # Need to wait for the notification
             
             num_pages = response['DocumentMetadata']['Pages']
             logger.info(f'Document text detected:')
@@ -301,7 +304,7 @@ def download_and_save_tables(job_id, path, config, logger):
             writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
             writer.writerows(ans)
 
-    return True  # Success
+    return True, 'SUCCEEDED'  # Success
 
 
 def generate_table(table_id, blocks_map, logger):
