@@ -161,8 +161,10 @@ def run_textract_async(filename, request_token, config, logger):
 
 
 def wait(attempt):
-    if attempt % 20 == 0:
+    n=30
+    if attempt % n == 0:
         if attempt:
+            #newline every n dots
             print()
             return False
     else:
@@ -177,10 +179,13 @@ def wait_textract_async(filename, job_id, output_path, config, logger, output):
     logger.info('Waiting for job completion:')
     tic = time.perf_counter()
     sqs_client = config.session.client('sqs')
-    max_attempts = 3600
+    max_seconds_waiting = 7200
+    time_per_attempt = 3
+    max_attempts = max_seconds_waiting / time_per_attempt # 3600 * 2sec wait = 7200 sec
+
 
     try:
-        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger)
+        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output)
         if succeeded:
             logger.warning(' - Job ID already existed on Textract; perhaps due to an early aborted run')
             return
@@ -192,11 +197,11 @@ def wait_textract_async(filename, job_id, output_path, config, logger, output):
     logger.info(' - Waiting in queue for messages...')
     has_dots = False
 
-    for attempt in range(max_attempts):
+    for attempt in range(max_attempts):   
         sqs_response = sqs_client.receive_message(QueueUrl=config.queue_url, MessageAttributeNames=['ALL'], MaxNumberOfMessages=10)
         if sqs_response:
             if 'Messages' not in sqs_response:
-                has_dots = wait(attempt)
+                has_dots = wait(attempt, time_per_attempt)
                 continue
             elif has_dots:
                 print()
@@ -221,6 +226,8 @@ def wait_textract_async(filename, job_id, output_path, config, logger, output):
                     return
                 else:
                     logger.info(f'   Job didn\'t match: "{job_id}" vs "{received_job_id}"')
+    #all attempts failed to return from function
+    raise SystemExit("No response within response interval")
 
 
 def download_and_save_tables(job_id, path, config, logger, output):
@@ -233,6 +240,7 @@ def download_and_save_tables(job_id, path, config, logger, output):
     textract_client = config.session.client('textract')
     max_results = 1000  # Maximum number of blocks returned per request (1-1000)
     pagination_token = None  # Allows us to retrieve the next set of blocks (1-255)
+    
     if output is None:
         output="tsv"
 
@@ -299,7 +307,7 @@ def download_and_save_tables(job_id, path, config, logger, output):
         page = blocks_map[table_id]['Page']
         table_counter[page] += 1
         table_num = table_counter[page]
-        fn = path / f'{page:04}-{table_num:02}.'+output
+        fn = path / (f'{page:04}-{table_num:02}.' + output)
 
         with fn.open(mode='w', newline='', encoding='utf-8') as f:
             logger.info(f'   Saving file "{fn.name}"')
@@ -355,7 +363,7 @@ def get_text(result, blocks_map):
     return text, warning
 
 
-def aws_extract_file(config, filename, output, keep_in_s3, ignore_cache):
+def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output):
     print(f'Extracting tables from {filename.name} with AWS Textract')
     output_path = filename.parent / ('textract-' + filename.stem)
     output_path.mkdir(exist_ok=True)
@@ -374,7 +382,7 @@ def aws_extract_file(config, filename, output, keep_in_s3, ignore_cache):
     job_id = run_textract_async(filename, request_token, config, logger)
     if not keep_in_s3:
         delete_file(filename, config, logger)
-    wait_textract_async(filename, job_id, output_path, config, logger)
+    wait_textract_async(filename, job_id, output_path, config, logger, output)
 
     done_path.touch()
     print()
@@ -386,7 +394,7 @@ def aws_extract_file(config, filename, output, keep_in_s3, ignore_cache):
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename=None, directory=None, extension=None, output=None, keep_in_s3=False, ignore_cache=False):
+def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False, output=None):
 
     # Logging details
     log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
@@ -412,7 +420,7 @@ def aws_extract_tables(filename=None, directory=None, extension=None, output=Non
 
     # [1] Single files (PDFs or images)
     if filename is not None:
-        
+        aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output)
         exit()
 
 
