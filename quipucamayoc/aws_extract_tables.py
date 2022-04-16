@@ -172,7 +172,7 @@ def wait(attempt):
         return True
 
 
-def wait_textract_async(filename, job_id, output_path, config, logger):
+def wait_textract_async(filename, job_id, output_path, config, logger, output):
 
     logger.info('Waiting for job completion:')
     tic = time.perf_counter()
@@ -214,7 +214,7 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
                     job_found = True
                     toc = time.perf_counter()
                     logger.info(f' - Elapsed time: {toc - tic:6.2f}s')
-                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger)
+                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output)
                     if not succeeded:
                         raise Exception(f"AWS Textract job status did not succeed (job-status='job_status')")
                     sqs_client.delete_message(QueueUrl=config.queue_url, ReceiptHandle=message['ReceiptHandle'])
@@ -223,7 +223,7 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
                     logger.info(f'   Job didn\'t match: "{job_id}" vs "{received_job_id}"')
 
 
-def download_and_save_tables(job_id, path, config, logger):
+def download_and_save_tables(job_id, path, config, logger, output):
     '''
     Download all the tables returned by Textract, and save them in the -path- folder with format:
     0123-09.tsv (table 9 of page 123)
@@ -233,6 +233,8 @@ def download_and_save_tables(job_id, path, config, logger):
     textract_client = config.session.client('textract')
     max_results = 1000  # Maximum number of blocks returned per request (1-1000)
     pagination_token = None  # Allows us to retrieve the next set of blocks (1-255)
+    if output is None:
+        output="tsv"
 
     children = {}
     blocks_map = {}
@@ -297,11 +299,15 @@ def download_and_save_tables(job_id, path, config, logger):
         page = blocks_map[table_id]['Page']
         table_counter[page] += 1
         table_num = table_counter[page]
-        fn = path / f'{page:04}-{table_num:02}.tsv'
+        fn = path / f'{page:04}-{table_num:02}.'+output
 
         with fn.open(mode='w', newline='', encoding='utf-8') as f:
             logger.info(f'   Saving file "{fn.name}"')
-            writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
+            if output == "tsv":
+                writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
+            elif output=="csv":
+                writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+
             writer.writerows(ans)
 
     return True, 'SUCCEEDED'  # Success
@@ -349,11 +355,38 @@ def get_text(result, blocks_map):
     return text, warning
 
 
+def aws_extract_file(config, filename, output, keep_in_s3, ignore_cache):
+    print(f'Extracting tables from {filename.name} with AWS Textract')
+    output_path = filename.parent / ('textract-' + filename.stem)
+    output_path.mkdir(exist_ok=True)
+    done_path = output_path / (filename.stem + '.done')
+    is_done = done_path.is_file() and not ignore_cache
+
+    if is_done:
+        logger.success(f'File "{filename}" already processed; skipping')
+        exit()
+
+    keep_in_s3 = True
+        
+    logger.info(f'Hashing file...')
+    request_token = hash_file(filename)
+    upload_file(filename, config, logger)
+    job_id = run_textract_async(filename, request_token, config, logger)
+    if not keep_in_s3:
+        delete_file(filename, config, logger)
+    wait_textract_async(filename, job_id, output_path, config, logger)
+
+    done_path.touch()
+    print()
+    print(f'File "{filename}" processed!')    
+
+
+
 # ---------------------------
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False):
+def aws_extract_tables(filename=None, directory=None, extension=None, output=None, keep_in_s3=False, ignore_cache=False):
 
     # Logging details
     log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
@@ -368,6 +401,10 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
         raise SystemExit("Error: --directory option requires --extension")
     if (extension is not None):
         assert extension in ('pdf', 'png', 'jpg', 'tiff')
+    #Ideally more output formats to come!
+    if (output is not None):
+        assert output in ('csv','tsv')
+
 
     # Configuration details
     config = QUIPU()
@@ -375,29 +412,7 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
 
     # [1] Single files (PDFs or images)
     if filename is not None:
-        print(f'Extracting tables from {filename.name} with AWS Textract')
-        output_path = filename.parent / ('textract-' + filename.stem)
-        output_path.mkdir(exist_ok=True)
-        done_path = output_path / (filename.stem + '.done')
-        is_done = done_path.is_file() and not ignore_cache
-
-        if is_done:
-            logger.success(f'File "{filename}" already processed; skipping')
-            exit()
-
-        keep_in_s3 = True
         
-        logger.info(f'Hashing file...')
-        request_token = hash_file(filename)
-        upload_file(filename, config, logger)
-        job_id = run_textract_async(filename, request_token, config, logger)
-        if not keep_in_s3:
-            delete_file(filename, config, logger)
-        wait_textract_async(filename, job_id, output_path, config, logger)
-
-        done_path.touch()
-        print()
-        print(f'File "{filename}" processed!')
         exit()
 
 

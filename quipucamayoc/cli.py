@@ -50,10 +50,10 @@ def aws(action):
 @click.option('-f', '--filename', '--file', type=str, help='Filename of file that will be OCRed')
 @click.option('-d', '--directory', '--dir', type=str, help='Alternatively, folder containing images that will be OCRed')
 @click.option('-e', '--extension', '--ext', type=str, help='Extension of images (pdf, png, jpg, jpeg)')
+@click.option("-o", '--output', '--out', type=str, default="tsv", help="Extension of output (csv, tsv, ...)")
 @click.option('--keep/--no-keep', default=False, help='Keep object in AWS S3 bucket (will have to be removed manually)')
 @click.option('--engine', default='aws', type=click.Choice(['aws']), help='OCR engine (currently only AWS)')
-
-def extract_tables(filename, directory, extension, keep, engine):
+def extract_tables(filename, directory, extension, output, keep, engine):
 
     if engine == 'aws':
         if filename is not None:
@@ -61,6 +61,7 @@ def extract_tables(filename, directory, extension, keep, engine):
                 if not filename.is_file():
                     raise SystemExit(f"[quipucamayoc] File not found: '{filename.name}'")
         directory = Path(directory) if directory is not None else directory
-        aws_extract_tables(filename=filename, directory=directory, extension=extension, keep_in_s3=keep, ignore_cache=False)
+        aws_extract_tables(filename=filename, directory=directory, extension=extension, output=output, keep_in_s3=keep, ignore_cache=False)
+        #aws_extract_tables(filename=filename, directory=directory, extension=extension, keep_in_s3=keep, ignore_cache=False)
     else:
         raise Exception(engine)
