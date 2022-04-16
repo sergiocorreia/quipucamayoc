@@ -160,7 +160,7 @@ def run_textract_async(filename, request_token, config, logger):
     return job_id
 
 
-def wait(attempt):
+def wait(attempt, s):
     n=30
     if attempt % n == 0:
         if attempt:
@@ -170,7 +170,7 @@ def wait(attempt):
     else:
         print('.', end='')
         sys.stdout.flush()
-        time.sleep(2) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
+        time.sleep(s) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
         return True
 
 
