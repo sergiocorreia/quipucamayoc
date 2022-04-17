@@ -465,17 +465,17 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
     # [2] and [3] Folders
     directory = Path(directory)
     filenames = directory.glob(f'*.{extension}')
-    raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
-
 
     # [2] Folders with multiple PDFs
     if extension=='pdf':
         for filename in filenames:
             print(f'{filename=}')
             assert filename.is_file()
+            aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, page_append)
             raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
         exit()
 
+    raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
 
     # [3] Folders with multiple images representing a single PDF
     for filename in filenames:
