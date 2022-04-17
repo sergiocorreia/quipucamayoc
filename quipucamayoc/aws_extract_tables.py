@@ -174,18 +174,17 @@ def wait(attempt, s):
         return True
 
 
-def wait_textract_async(filename, job_id, output_path, config, logger, output):
+def wait_textract_async(filename, job_id, output_path, config, logger, output, page_append):
 
     logger.info('Waiting for job completion:')
     tic = time.perf_counter()
     sqs_client = config.session.client('sqs')
     max_seconds_waiting = 7200
     time_per_attempt = 3
-    max_attempts = max_seconds_waiting / time_per_attempt # 3600 * 2sec wait = 7200 sec
-
+    max_attempts = int(max_seconds_waiting / time_per_attempt) # 3600 * 2sec wait = 7200 sec
 
     try:
-        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output)
+        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output, page_append)
         if succeeded:
             logger.warning(' - Job ID already existed on Textract; perhaps due to an early aborted run')
             return
@@ -219,7 +218,7 @@ def wait_textract_async(filename, job_id, output_path, config, logger, output):
                     job_found = True
                     toc = time.perf_counter()
                     logger.info(f' - Elapsed time: {toc - tic:6.2f}s')
-                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output)
+                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output, page_append)
                     if not succeeded:
                         raise Exception(f"AWS Textract job status did not succeed (job-status='job_status')")
                     sqs_client.delete_message(QueueUrl=config.queue_url, ReceiptHandle=message['ReceiptHandle'])
@@ -230,7 +229,55 @@ def wait_textract_async(filename, job_id, output_path, config, logger, output):
     raise SystemExit("No response within response interval")
 
 
-def download_and_save_tables(job_id, path, config, logger, output):
+def save_to_file(object, path, logger, output):
+    with path.open(mode='w', newline='', encoding='utf-8') as f:
+        logger.info(f'   Saving file "{path.name}"')
+        if output == "tsv":
+            writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
+        elif output=="csv":
+            writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+
+        writer.writerows(object)
+
+
+def save_tables_to_outputs(path, logger, output, table_ids, blocks_map):
+    table_counter = Counter()
+
+    for table_id in table_ids:
+        logger.info(f' - Parsing table')
+        # TODO: if results are unsorted, use Block['Geometry']['BoundingBox']['Top'] to sort and then save at the end
+        
+        ans = generate_table(table_id, blocks_map, logger)
+        page = blocks_map[table_id]['Page']
+        table_counter[page] += 1
+        table_num = table_counter[page]
+        fn = path / (f'{page:04}-{table_num:02}.' + output)
+        save_to_file(ans, fn, logger, output)
+
+        
+
+def save_file_to_output(path, logger, output, table_ids, blocks_map):
+    first_table = True
+    full_ans = None
+    for table_id in table_ids:
+        logger.info(f' - Parsing table')
+        
+        if first_table:
+            full_ans = generate_table(table_id, blocks_map, logger)
+            first_table = False
+        else: 
+            #Cut header row
+            ans = generate_table(table_id, blocks_map, logger)
+            #Will need to be fine-tuned...
+            # maybe flag first row that is not mostly full and mostly text
+            ans = ans[2::]
+            full_ans = full_ans + ans
+    #TODO: when save_all_to_file enabled, set pathname earlier in pipeline
+    fn = Path(str(path) + (f'.'+output))
+    save_to_file(full_ans, fn, logger, output)
+
+
+def download_and_save_tables(job_id, path, config, logger, output, page_append):
     '''
     Download all the tables returned by Textract, and save them in the -path- folder with format:
     0123-09.tsv (table 9 of page 123)
@@ -297,31 +344,20 @@ def download_and_save_tables(job_id, path, config, logger, output):
     logger.info(' - Counts by block type:')
     for block_type, n in counter.items():
         logger.info(f'   - "{block_type}": {n}')
+
+    if(page_append):
+        save_file_to_output(path, logger, output, table_ids, blocks_map)
+    else:
+        save_tables_to_outputs(path, logger, output, table_ids, blocks_map)
+
     
-    table_counter = Counter()
-    for table_id in table_ids:
-        logger.info(f' - Parsing table')
-        # TODO: if results are unsorted, use Block['Geometry']['BoundingBox']['Top'] to sort and then save at the end
-        
-        ans = generate_table(table_id, blocks_map, logger)
-        page = blocks_map[table_id]['Page']
-        table_counter[page] += 1
-        table_num = table_counter[page]
-        fn = path / (f'{page:04}-{table_num:02}.' + output)
-
-        with fn.open(mode='w', newline='', encoding='utf-8') as f:
-            logger.info(f'   Saving file "{fn.name}"')
-            if output == "tsv":
-                writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
-            elif output=="csv":
-                writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
-
-            writer.writerows(ans)
 
     return True, 'SUCCEEDED'  # Success
 
 
+
 def generate_table(table_id, blocks_map, logger):
+    '''Generates as a [[]] list the table for the input'''
     rows = defaultdict(dict)
     table_result = blocks_map[table_id]
     for relationship in table_result['Relationships']:
@@ -363,12 +399,15 @@ def get_text(result, blocks_map):
     return text, warning
 
 
-def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output):
+def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, page_append):
     print(f'Extracting tables from {filename.name} with AWS Textract')
     output_path = filename.parent / ('textract-' + filename.stem)
     output_path.mkdir(exist_ok=True)
     done_path = output_path / (filename.stem + '.done')
     is_done = done_path.is_file() and not ignore_cache
+
+    if(page_append):
+        output_path = output_path / filename.stem
 
     if is_done:
         logger.success(f'File "{filename}" already processed; skipping')
@@ -382,7 +421,7 @@ def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output):
     job_id = run_textract_async(filename, request_token, config, logger)
     if not keep_in_s3:
         delete_file(filename, config, logger)
-    wait_textract_async(filename, job_id, output_path, config, logger, output)
+    wait_textract_async(filename, job_id, output_path, config, logger, output, page_append)
 
     done_path.touch()
     print()
@@ -394,7 +433,7 @@ def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output):
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False, output=None):
+def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False, output=None, page_append=False):
 
     # Logging details
     log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
@@ -413,14 +452,13 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
     if (output is not None):
         assert output in ('csv','tsv')
 
-
     # Configuration details
     config = QUIPU()
     config.session = boto3.Session(profile_name='quipucamayoc', region_name=config.region) # Avoid specifying region_name for every client
 
     # [1] Single files (PDFs or images)
     if filename is not None:
-        aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output)
+        aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, page_append)
         exit()
 
 
