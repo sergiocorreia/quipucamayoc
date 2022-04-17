@@ -18,7 +18,7 @@ For an user guide, documentation, and installation instructions, see <http://sco
 If you want to contribute by improving the code or extending its functionality (much welcome!), head [here](/CONTRIBUTING.md).
 
 
-##Version Notes
+## Version Notes
 This version has several added features under development.
 Notably, output can now be specified with -o to output a csv file, in addition to a tsv as default.
 Output can also be turned to a single file, rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. 
