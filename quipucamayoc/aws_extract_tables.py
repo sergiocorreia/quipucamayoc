@@ -399,9 +399,10 @@ def get_text(result, blocks_map):
     return text, warning
 
 
-def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, page_append):
+def aws_extract_from_file_helper(config, filename, keep_in_s3, ignore_cache, output, page_append):
     print(f'Extracting tables from {filename.name} with AWS Textract')
     output_path = filename.parent / ('textract-' + filename.stem)
+    # won't overwrite existing directory
     output_path.mkdir(exist_ok=True)
     done_path = output_path / (filename.stem + '.done')
     is_done = done_path.is_file() and not ignore_cache
@@ -425,8 +426,7 @@ def aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, pa
 
     done_path.touch()
     print()
-    print(f'File "{filename}" processed!')    
-
+    print(f'File "{filename}" processed!')
 
 
 # ---------------------------

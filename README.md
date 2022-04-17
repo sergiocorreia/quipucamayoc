@@ -18,6 +18,16 @@ For an user guide, documentation, and installation instructions, see <http://sco
 If you want to contribute by improving the code or extending its functionality (much welcome!), head [here](/CONTRIBUTING.md).
 
 
+##Version Notes
+This version has several added features under development.
+Notably, output can now be specified with -o to output a csv file, in addition to a tsv as default.
+Output can also be turned to a single file, rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. 
+
+Current cautions:
+-Currently, when appending new tables to an existing table, the top 2 rows are removed. The data I have been primarily testing has a two-line header, however this may be made more modular in due time.
+-Currently, when using the -d (with --extension pdf) flag to run a directory, each file is processed as an individual file. Since an individual file run gets a new folder created, each file in a directory will get a shared folder. This should be fixed relatively soon, so all outputs for a directory are stored to the same output directory. I believe a .done file should be constructed for each file, and each file should remove the previous .done file, so that at the end of a directory run, the last file is the only one with a .done marker. 
+
+
 ## Installation
 
 ### Pip
