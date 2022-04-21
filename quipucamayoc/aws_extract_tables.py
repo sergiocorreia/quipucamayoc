@@ -30,6 +30,7 @@ import json
 import time
 import hashlib
 from pathlib import Path
+import os
 from collections import Counter, defaultdict
 
 import boto3
@@ -399,11 +400,9 @@ def get_text(result, blocks_map):
     return text, warning
 
 
-def aws_extract_from_file_helper(config, filename, keep_in_s3, ignore_cache, output, page_append):
+def aws_extract_from_file(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append):
     print(f'Extracting tables from {filename.name} with AWS Textract')
-    output_path = filename.parent / ('textract-' + filename.stem)
-    # won't overwrite existing directory
-    output_path.mkdir(exist_ok=True)
+    
     done_path = output_path / (filename.stem + '.done')
     is_done = done_path.is_file() and not ignore_cache
 
@@ -413,20 +412,72 @@ def aws_extract_from_file_helper(config, filename, keep_in_s3, ignore_cache, out
     if is_done:
         logger.success(f'File "{filename}" already processed; skipping')
         exit()
-
-    keep_in_s3 = True
         
-    logger.info(f'Hashing file...')
+    logger.info(f'Hashing file..."{filename.stem}"')
     request_token = hash_file(filename)
     upload_file(filename, config, logger)
     job_id = run_textract_async(filename, request_token, config, logger)
+    
+    wait_textract_async(filename, job_id, output_path, config, logger, output, page_append)
+
     if not keep_in_s3:
         delete_file(filename, config, logger)
-    wait_textract_async(filename, job_id, output_path, config, logger, output, page_append)
 
     done_path.touch()
     print()
     print(f'File "{filename}" processed!')
+
+
+def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append):
+    directory = Path(directory)
+    filenames = list(directory.glob(f'*.{extension}'))
+
+    output_dir = directory.parent / (f'textract-' + directory.stem)
+
+    output_dir.mkdir(exist_ok=True)
+    done_path = output_dir / (directory.stem + '.done')
+    logger.info(done_path)
+    is_done = done_path.is_file() and not ignore_cache
+    if is_done:
+        logger.success(f'File "{filename}" already processed; skipping')
+        exit()
+
+    for filename in filenames:
+            assert filename.is_file()
+            aws_extract_from_file(config, filename, output_dir, keep_in_s3, ignore_cache, output, page_append)
+            #assert Path(f'{filename.stem}.done').is_file()
+
+    done_files = list(output_dir.glob(f'*.done'))
+    
+    done_files = [str(f) for f in done_files]
+  
+    logger.info("\n")
+    try:
+        assert len(done_files)==len(filenames)
+    except AssertionError:
+        logger.warning("# .done Files does not match # Files, check .done log!!!")
+
+    #remove other done files
+    for done_file in done_files:
+        print(done_file)
+        os.remove(done_file)
+    
+    
+    done_path.touch()
+    with open(done_path, 'w') as f:
+        f.write('\n'.join(done_files))
+    print()
+    print(f'Directory "{directory}" processed!')
+    
+
+
+def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append):
+    
+    output_path = filename.parent / ('textract-' + filename.stem)
+    # won't overwrite existing directory
+    output_path.mkdir(exist_ok=True)
+
+    aws_extract_from_file(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append)
 
 
 # ---------------------------
@@ -458,21 +509,18 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
 
     # [1] Single files (PDFs or images)
     if filename is not None:
-        aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, page_append)
+        aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append)
         exit()
 
 
     # [2] and [3] Folders
-    directory = Path(directory)
-    filenames = directory.glob(f'*.{extension}')
+    
 
     # [2] Folders with multiple PDFs
     if extension=='pdf':
-        for filename in filenames:
-            print(f'{filename=}')
-            assert filename.is_file()
-            aws_extract_from_file(config, filename, keep_in_s3, ignore_cache, output, page_append)
-            raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
+        aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append)
+        
+        #raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
         exit()
 
     raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")

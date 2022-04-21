@@ -1,12 +1,9 @@
 # Quipucamayoc: tools for digitizing historical data
-
+This is an incomplete version, forked from the complete version, to make specific changes.
  is a Python package that simplifies the extraction of historical data from scanned images and PDFs.
 It's designed to be modular and so it can be used together with other existing tools, and can be extended easily by users.
 
-For an overview of how to use  `quipucamayoc` to digitize historical data, see [this research article](http://scorreia.com/research/digitizing.pdf), which amongst other things details the different steps involved, the methods used, and provides practical examples.
-For an user guide, documentation, and installation instructions, see <http://scorreia.com/software/quipucamayoc/> (TODO).
-
-If you want to contribute by improving the code or extending its functionality (much welcome!), head [here](/CONTRIBUTING.md).
+For an overview of how to use  `quipucamayoc` to digitize historical data, see [the original quipucamayoc repository, here][https://github.com/sergiocorreia/quipucamayoc]
 
 
 ## Version Notes
@@ -19,6 +16,11 @@ Notably,
 
 Current cautions:
 - Currently, when appending new tables to an existing table (using --page-append), the top 2 rows are removed. The data I have been primarily testing has a two-line header, however this may be made more modular in due time. I wonder if some sort of quipu defaults file should or could exist to record this, like environment variables.
+- -d (with --extension pdf) is currently under development. Results may vary. 
+  Each file is processed as an individual file outputted to a common directory, 
+  with a .done file. When the entire dir is processed, all .done files are replaced
+  with a single directory .done, which contains the names of all removed .done files.
+  Does not currently leverage asyncrinosity
 - Currently, when using the -d (with --extension pdf) flag to run a directory, each file is processed as an individual file. Since an individual file run gets a new folder created, each file in a directory will get a shared folder. This should be fixed relatively soon, so all outputs for a directory are stored to the same output directory. I believe a .done file should be constructed for each file, and each file should remove the previous .done file, so that at the end of a directory run, the last file is the only one with a .done marker. 
 
 
