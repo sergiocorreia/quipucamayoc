@@ -231,11 +231,13 @@ def wait_textract_async(filename, job_id, output_path, config, logger, output, p
 
 
 def save_to_file(object, path, logger, output):
+    assert path.parent.exists()
+    path.touch()
     with path.open(mode='w', newline='', encoding='utf-8') as f:
         logger.info(f'   Saving file "{path.name}"')
         if output == "tsv":
             writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
-        elif output=="csv":
+        elif output == "csv":
             writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
 
         writer.writerows(object)
@@ -400,14 +402,11 @@ def get_text(result, blocks_map):
     return text, warning
 
 
-def aws_extract_from_file(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append):
+def aws_extract_from_file_send(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append):
     print(f'Extracting tables from {filename.name} with AWS Textract')
     
     done_path = output_path / (filename.stem + '.done')
     is_done = done_path.is_file() and not ignore_cache
-
-    if(page_append):
-        output_path = output_path / filename.stem
 
     if is_done:
         logger.success(f'File "{filename}" already processed; skipping')
@@ -418,8 +417,20 @@ def aws_extract_from_file(config, filename, output_path, keep_in_s3, ignore_cach
     upload_file(filename, config, logger)
     job_id = run_textract_async(filename, request_token, config, logger)
     
-    wait_textract_async(filename, job_id, output_path, config, logger, output, page_append)
+    print()
+    print(f'File "{filename}" sent!')
+    return job_id
+    
 
+def aws_extract_from_file_receive(filename, job_id, output_path, config, output, page_append, keep_in_s3):
+    
+    if(page_append):
+        output_path = output_path / filename.stem
+    logger.info(f'Receiving {filename}')
+    wait_textract_async(filename, job_id, output_path, config, logger, output, page_append)
+    
+    done_path = output_path.parent / (filename.stem + '.done')
+    print(done_path)
     if not keep_in_s3:
         delete_file(filename, config, logger)
 
@@ -432,9 +443,15 @@ def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_
     directory = Path(directory)
     filenames = list(directory.glob(f'*.{extension}'))
 
+    #Ensure right dir getting created
     output_dir = directory.parent / (f'textract-' + directory.stem)
 
-    output_dir.mkdir(exist_ok=True)
+    if output_dir.is_dir():
+        os.remove(output_dir)
+
+    output_dir.mkdir()
+    assert output_dir.is_dir()
+    logger.info(f'{output_dir} created')
     done_path = output_dir / (directory.stem + '.done')
     logger.info(done_path)
     is_done = done_path.is_file() and not ignore_cache
@@ -442,26 +459,29 @@ def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_
         logger.success(f'File "{filename}" already processed; skipping')
         exit()
 
+    job_ids = []
+
     for filename in filenames:
             assert filename.is_file()
-            aws_extract_from_file(config, filename, output_dir, keep_in_s3, ignore_cache, output, page_append)
+            job_ids.append( aws_extract_from_file_send(config, filename, output_dir, keep_in_s3, ignore_cache, output, page_append))
             #assert Path(f'{filename.stem}.done').is_file()
 
+    for (filename, job_id) in zip(filenames, job_ids):
+        aws_extract_from_file_receive(filename, job_id, output_dir, config, output, page_append, keep_in_s3)
+
     done_files = list(output_dir.glob(f'*.done'))
-    
     done_files = [str(f) for f in done_files]
   
     logger.info("\n")
     try:
         assert len(done_files)==len(filenames)
     except AssertionError:
-        logger.warning("# .done Files does not match # Files, check .done log!!!")
+        logger.warning("# of .done Files does not match # of files, check .done log!!!")
 
     #remove other done files
     for done_file in done_files:
         print(done_file)
         os.remove(done_file)
-    
     
     done_path.touch()
     with open(done_path, 'w') as f:
@@ -470,15 +490,15 @@ def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_
     print(f'Directory "{directory}" processed!')
     
 
-
+#Extracts from a single file
 def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append):
     
     output_path = filename.parent / ('textract-' + filename.stem)
     # won't overwrite existing directory
     output_path.mkdir(exist_ok=True)
 
-    aws_extract_from_file(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append)
-
+    job_id = aws_extract_from_file_send(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append)
+    aws_extract_from_file_receive(filename, job_id, output_path, config, output, page_append, keep_in_s3)
 
 # ---------------------------
 # Main function

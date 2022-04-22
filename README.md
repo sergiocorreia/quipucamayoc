@@ -20,8 +20,7 @@ Current cautions:
   Each file is processed as an individual file outputted to a common directory, 
   with a .done file. When the entire dir is processed, all .done files are replaced
   with a single directory .done, which contains the names of all removed .done files.
-  Does not currently leverage asyncrinosity
-- Currently, when using the -d (with --extension pdf) flag to run a directory, each file is processed as an individual file. Since an individual file run gets a new folder created, each file in a directory will get a shared folder. This should be fixed relatively soon, so all outputs for a directory are stored to the same output directory. I believe a .done file should be constructed for each file, and each file should remove the previous .done file, so that at the end of a directory run, the last file is the only one with a .done marker. 
+  Does not currently leverage asyncrinosity, so can probably be made MUCH faster soon.
 
 
 ## Installation
