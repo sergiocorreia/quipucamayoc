@@ -52,18 +52,23 @@ def aws(action):
 @click.option('-e', '--extension', '--ext', type=str, help='Extension of images (pdf, png, jpg, jpeg)')
 @click.option('--keep/--no-keep', default=False, help='Keep object in AWS S3 bucket (will have to be removed manually)')
 @click.option('--engine', default='aws', type=click.Choice(['aws']), help='OCR engine (currently only AWS)')
-@click.option('--outputformat', '--out', type=str, default="tsv", help="Extension of output (csv, tsv, ...)")
-#Where should files direct themselves to for output?
-#@click.option("-o", "--outputdir", type=str)
+@click.option('-o','--outputformat', '--out', type=str, default="tsv", help="Format of output (csv, tsv, ...)")
 @click.option("--page-append", default=False, is_flag=True, help="Append all tables on page and pages in file to single output.")
-def extract_tables(filename, directory, extension, keep, engine, outputformat, page_append):
+@click.option("--output-dir", type=str, default=None, help="Name an (existing or not) directory for output contents to be placed into")
+def extract_tables(filename, directory, extension, keep, engine, outputformat, page_append, output_dir):
     if engine == 'aws':
         if filename is not None:
                 filename = Path(filename)
                 if not filename.is_file():
                     raise SystemExit(f"[quipucamayoc] File not found: '{filename.name}'")
         directory = Path(directory) if directory is not None else directory
-        aws_extract_tables(filename=filename, directory=directory, extension=extension, keep_in_s3=keep, ignore_cache=True, output=outputformat, page_append=page_append)
-        #aws_extract_tables(filename=filename, directory=directory, extension=extension, keep_in_s3=keep, ignore_cache=False)
+        aws_extract_tables(filename=filename, 
+                           directory=directory, 
+                           extension=extension, 
+                           keep_in_s3=keep, 
+                           ignore_cache=True, 
+                           output=outputformat, 
+                           page_append=page_append,
+                           output_dir=output_dir)
     else:
         raise Exception(engine)

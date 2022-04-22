@@ -11,16 +11,21 @@ To use this version, you must follow the installation notes for git below. This 
 This version has several added features under development.
 Notably, 
 - output can now be specified with -o to output a csv file, in addition to a tsv as default.
-- Output can also be turned to a single file using --page-append , rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. 
+- Output can also be turned to a single file using --page-append , rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. See cautions.
 - Timeouts are now fully caught, where previously upon timeout it could simply pass as though it had succeded
+- Directory now works when used with -d "dir" --extension pdf, see caution notes.
+- Output directory can now be specified with --output-dir. If none is specified,
+files go to a directory nested in the same directory as the file, and directories
+go to a directory in the same directory as the directory.
 
 Current cautions:
-- Currently, when appending new tables to an existing table (using --page-append), the top 2 rows are removed. The data I have been primarily testing has a two-line header, however this may be made more modular in due time. I wonder if some sort of quipu defaults file should or could exist to record this, like environment variables.
+- --page-append Currently, when appending new tables to an existing table, the top 2 rows are removed. The data I have been primarily testing has a two-line header, however this should be made more modular in due time. I wonder if some sort of quipu defaults file should or could exist to record this, like environment variables.
 - -d (with --extension pdf) is currently under development. Results may vary. 
   Each file is processed as an individual file outputted to a common directory, 
   with a .done file. When the entire dir is processed, all .done files are replaced
-  with a single directory .done, which contains the names of all removed .done files.
-  Does not currently leverage asyncrinosity, so can probably be made MUCH faster soon.
+  with a single directory .done file, which contains the names of all removed .done files. Runs asynchronously, sending all files to AWS, then waiting on each file,
+  making wait times compound as AWS can process files simultaneously.
+- --output-dir is new and has had little testing, but seems to work well.
 
 
 ## Installation

@@ -439,19 +439,16 @@ def aws_extract_from_file_receive(filename, job_id, output_path, config, output,
     print(f'File "{filename}" processed!')
 
 
-def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append):
+def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append, output_dir):
     directory = Path(directory)
     filenames = list(directory.glob(f'*.{extension}'))
 
-    #Ensure right dir getting created
-    output_dir = directory.parent / (f'textract-' + directory.stem)
+    if output_dir is None:
+        #Ensure right dir getting created
+        output_dir = directory.parent / (f'textract-' + directory.stem)
+        output_dir.mkdir()
 
-    if output_dir.is_dir():
-        os.remove(output_dir)
-
-    output_dir.mkdir()
-    assert output_dir.is_dir()
-    logger.info(f'{output_dir} created')
+    logger.info(f'{output_dir} exists')
     done_path = output_dir / (directory.stem + '.done')
     logger.info(done_path)
     is_done = done_path.is_file() and not ignore_cache
@@ -491,20 +488,20 @@ def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_
     
 
 #Extracts from a single file
-def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append):
-    
-    output_path = filename.parent / ('textract-' + filename.stem)
-    # won't overwrite existing directory
-    output_path.mkdir(exist_ok=True)
+def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append, output_dir):
+    if output_dir is None:
+        output_dir = filename.parent / ('textract-' + filename.stem)
+        # won't overwrite existing directory
+        output_dir.mkdir(exist_ok=True)
 
-    job_id = aws_extract_from_file_send(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append)
-    aws_extract_from_file_receive(filename, job_id, output_path, config, output, page_append, keep_in_s3)
+    job_id = aws_extract_from_file_send(config, filename, output_dir, keep_in_s3, ignore_cache, output, page_append)
+    aws_extract_from_file_receive(filename, job_id, output_dir, config, output, page_append, keep_in_s3)
 
 # ---------------------------
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False, output=None, page_append=False):
+def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False, output=None, page_append=False, output_dir=None):
 
     # Logging details
     log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
@@ -522,6 +519,12 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
     #Ideally more output formats to come!
     if (output is not None):
         assert output in ('csv','tsv')
+    if (output_dir is not None):
+        output_dir = Path(output_dir)
+        if not output_dir.is_dir():
+            #If dir doesn't exist, parent must
+            assert output_dir.parent.is_dir()
+            output_dir.mkdir()
 
     # Configuration details
     config = QUIPU()
@@ -529,7 +532,13 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
 
     # [1] Single files (PDFs or images)
     if filename is not None:
-        aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append)
+        aws_extract_from_filename(config, 
+                                  filename, 
+                                  keep_in_s3, 
+                                  ignore_cache, 
+                                  output, 
+                                  page_append,
+                                  output_dir)
         exit()
 
 
@@ -538,7 +547,14 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
 
     # [2] Folders with multiple PDFs
     if extension=='pdf':
-        aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append)
+        aws_extract_from_directory(config, 
+                                   directory, 
+                                   extension, 
+                                   keep_in_s3, 
+                                   ignore_cache, 
+                                   output, 
+                                   page_append,
+                                   output_dir)
         
         #raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
         exit()
