@@ -3,30 +3,20 @@ This is an incomplete version, forked from the complete version, to make specifi
  is a Python package that simplifies the extraction of historical data from scanned images and PDFs.
 It's designed to be modular and so it can be used together with other existing tools, and can be extended easily by users.
 
-For an overview of how to use  `quipucamayoc` to digitize historical data, see [the original quipucamayoc repository, here][https://github.com/sergiocorreia/quipucamayoc]
+For an overview of how to use  `quipucamayoc` to digitize historical data, see [the original quipucamayoc repository, here](https://github.com/sergiocorreia/quipucamayoc)
 
 
 ## Version Notes
-To use this version, you must follow the installation notes for git below. This version is not available through pypi.
+To use this version, you must follow the installation notes for git below. This version is not available through `pypi`.
 This version has several added features under development.
 Notably, 
-- output can now be specified with -o to output a csv file, in addition to a tsv as default.
-- Output can also be turned to a single file using --page-append , rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. See cautions.
-- Timeouts are now fully caught, where previously upon timeout it could simply pass as though it had succeded
-- Directory now works when used with -d "dir" --extension pdf, see caution notes.
-- Output directory can now be specified with --output-dir. If none is specified,
+- output can now be specified with `-o` to output a csv file, in addition to a tsv as default.
+- Output can also be turned to a single file using `--page-append N`, rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. For example, if the each header takes up 2 rows, then `--page-append 2` will keep the first table intact, and append each following table with the first 2 rows removed.
+- Timeouts are now fully caught, where previously upon timeout it could simply pass as though it had succeeded
+- Directory now works when used with `-d "dir" --extension pdf`. All files are sent to AWS, then all files are waited on, which ideally means that wait times get shorter for each returned file. 
+- Output directory can now be specified with `--output-dir`. If none is specified,
 files go to a directory nested in the same directory as the file, and directories
 go to a directory in the same directory as the directory.
-
-Current cautions:
-- --page-append Currently, when appending new tables to an existing table, the top 2 rows are removed. The data I have been primarily testing has a two-line header, however this should be made more modular in due time. I wonder if some sort of quipu defaults file should or could exist to record this, like environment variables.
-- -d (with --extension pdf) is currently under development. Results may vary. 
-  Each file is processed as an individual file outputted to a common directory, 
-  with a .done file. When the entire dir is processed, all .done files are replaced
-  with a single directory .done file, which contains the names of all removed .done files. Runs asynchronously, sending all files to AWS, then waiting on each file,
-  making wait times compound as AWS can process files simultaneously.
-- --output-dir is new and has had little testing, but seems to work well.
-
 
 ## Installation
 

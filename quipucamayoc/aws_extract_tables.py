@@ -175,7 +175,7 @@ def wait(attempt, s):
         return True
 
 
-def wait_textract_async(filename, job_id, output_path, config, logger, output, page_append):
+def wait_textract_async(job_id, output_path, config, logger, output, page_append):
 
     logger.info('Waiting for job completion:')
     tic = time.perf_counter()
@@ -261,7 +261,7 @@ def save_tables_to_outputs(path, logger, output, table_ids, blocks_map):
 
         
 
-def save_file_to_output(path, logger, output, table_ids, blocks_map):
+def save_file_to_output(path, logger, output, table_ids, blocks_map, page_append):
     """Saves all tables into a single output file, assumes same shape"""
 
     first_table = True
@@ -275,9 +275,8 @@ def save_file_to_output(path, logger, output, table_ids, blocks_map):
         else: 
             #Cut header row
             ans = generate_table(table_id, blocks_map, logger)
-            #Will need to be fine-tuned...
-            # maybe flag first row that is not mostly full and mostly text
-            ans = ans[2::]
+            #Skip n rows (header) on subsequent tables
+            ans = ans[page_append::]
             full_ans = full_ans + ans
     #TODO: when save_all_to_file enabled, set pathname earlier in pipeline
     fn = Path(str(path) + (f'.'+output))
@@ -352,8 +351,8 @@ def download_and_save_tables(job_id, path, config, logger, output, page_append):
     for block_type, n in counter.items():
         logger.info(f'   - "{block_type}": {n}')
 
-    if(page_append):
-        save_file_to_output(path, logger, output, table_ids, blocks_map)
+    if(page_append is not None):
+        save_file_to_output(path, logger, output, table_ids, blocks_map, page_append)
     else:
         save_tables_to_outputs(path, logger, output, table_ids, blocks_map)
 
@@ -406,8 +405,9 @@ def get_text(result, blocks_map):
     return text, warning
 
 
-def aws_extract_from_file_send(config, filename, output_path, keep_in_s3, ignore_cache, output, page_append):
+def aws_extract_from_file_send(config, filename, output_path, ignore_cache):
     """Sends the job to AWS"""
+
     print(f'Extracting tables from {filename.name} with AWS Textract')
     
     done_path = output_path / (filename.stem + '.done')
@@ -427,6 +427,7 @@ def aws_extract_from_file_send(config, filename, output_path, keep_in_s3, ignore
     return job_id
     
 
+
 def aws_extract_from_file_receive(filename, job_id, output_path, config, output, page_append, keep_in_s3):
     """Receives AWS job, this step occurs separately to allow multiple
     jobs to be sent before any are received."""
@@ -434,7 +435,7 @@ def aws_extract_from_file_receive(filename, job_id, output_path, config, output,
     if(page_append):
         output_path = output_path / filename.stem
     logger.info(f'Receiving {filename}')
-    wait_textract_async(filename, job_id, output_path, config, logger, output, page_append)
+    wait_textract_async(job_id, output_path, config, logger, output, page_append)
     
     done_path = output_path.parent / (filename.stem + '.done')
     print(done_path)
@@ -444,6 +445,7 @@ def aws_extract_from_file_receive(filename, job_id, output_path, config, output,
     done_path.touch()
     print()
     print(f'File "{filename}" processed!')
+
 
 
 def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append, output_dir):
@@ -469,11 +471,22 @@ def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_
     #Send off files
     for filename in filenames:
             assert filename.is_file()
-            job_ids.append( aws_extract_from_file_send(config, filename, output_dir, keep_in_s3, ignore_cache, output, page_append))
+            file_id = aws_extract_from_file_send(
+                    config, 
+                    filename, 
+                    output_dir, 
+                    ignore_cache)
+            job_ids.append(file_id)
 
     #And receive back each files job
     for (filename, job_id) in zip(filenames, job_ids):
-        aws_extract_from_file_receive(filename, job_id, output_dir, config, output, page_append, keep_in_s3)
+        aws_extract_from_file_receive(
+            filename,
+            job_id, 
+            output_dir, 
+            config, output, 
+            page_append, 
+            keep_in_s3)
 
     done_files = list(output_dir.glob(f'*.done'))
     done_files = [str(f) for f in done_files]
@@ -495,7 +508,7 @@ def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_
     print(f'Directory "{directory}" processed!')
     
 
-#Extracts from a single file
+
 def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append, output_dir):
     "Performs extraction over a single file"
 
@@ -504,14 +517,14 @@ def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output
         # won't overwrite existing directory
         output_dir.mkdir(exist_ok=True)
 
-    job_id = aws_extract_from_file_send(config, filename, output_dir, keep_in_s3, ignore_cache, output, page_append)
+    job_id = aws_extract_from_file_send(config, filename, output_dir, ignore_cache)
     aws_extract_from_file_receive(filename, job_id, output_dir, config, output, page_append, keep_in_s3)
 
 # ---------------------------
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename: str = None, directory: str = None, extension: str=None, keep_in_s3: bool=False, ignore_cache: bool=False, output: str=None, page_append: bool=False, output_dir: str=None):
+def aws_extract_tables(filename: str = None, directory: str = None, extension: str=None, keep_in_s3: bool=False, ignore_cache: bool=False, output: str=None, page_append: int=None, output_dir: str=None):
 
     # Logging details
     log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
@@ -535,6 +548,10 @@ def aws_extract_tables(filename: str = None, directory: str = None, extension: s
             #If dir doesn't exist, parent must
             assert output_dir.parent.is_dir()
             output_dir.mkdir()
+    if (page_append is not None):
+        page_append = int(page_append)
+        assert page_append >= 0
+
 
     # Configuration details
     config = QUIPU()

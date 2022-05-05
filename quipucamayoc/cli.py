@@ -53,7 +53,7 @@ def aws(action):
 @click.option('--keep/--no-keep', default=False, help='Keep object in AWS S3 bucket (will have to be removed manually)')
 @click.option('--engine', default='aws', type=click.Choice(['aws']), help='OCR engine (currently only AWS)')
 @click.option('-o','--outputformat', '--out', type=str, default="tsv", help="Format of output (csv, tsv, ...)")
-@click.option("--page-append", default=False, is_flag=True, help="Append all tables on page and pages in file to single output.")
+@click.option("--page-append", type=int, default=None, help="Appends all tables in file to single output. Takes # of header rows to skip on subsequent tables (or 0)")
 @click.option("--output-dir", type=str, default=None, help="Name an (existing or not) directory for output contents to be placed into")
 def extract_tables(filename, directory, extension, keep, engine, outputformat, page_append, output_dir):
     if engine == 'aws':
