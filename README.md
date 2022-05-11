@@ -1,26 +1,33 @@
 # Quipucamayoc: tools for digitizing historical data
-This is an incomplete version, forked from the complete version, to make specific changes.
- is a Python package that simplifies the extraction of historical data from scanned images and PDFs.
+
+[![Development Status](https://img.shields.io/pypi/status/quipucamayoc.svg)](https://pypi.python.org/pypi/quipucamayoc/)
+[![Build Status](https://github.com/sergiocorreia/quipucamayoc/workflows/CI%20Tests/badge.svg)](https://github.com/sergiocorreia/quipucamayoc/actions?query=workflow%3A%22CI+Tests%22)
+![License](https://img.shields.io/pypi/l/quipucamayoc.svg)
+[![DOI](https://zenodo.org/badge/55024750.svg)](https://zenodo.org/badge/latestdoi/55024750)
+
+[![GitHub Releases](https://img.shields.io/github/tag/sergiocorreia/quipucamayoc.svg?label=github+release)](https://github.com/sergiocorreia/quipucamayoc/releases)
+[![Python version](https://img.shields.io/pypi/pyversions/quipucamayoc.svg)](https://pypi.python.org/pypi/quipucamayoc/)
+[![Supported implementations](https://img.shields.io/pypi/implementation/quipucamayoc.svg)](https://pypi.org/project/quipucamayoc)
+
+[quipucamayoc](http://scorreia.com/software/quipucamayoc/) is a Python package that simplifies the extraction of historical data from scanned images and PDFs.
 It's designed to be modular and so it can be used together with other existing tools, and can be extended easily by users.
 
-For an overview of how to use  `quipucamayoc` to digitize historical data, see [the original quipucamayoc repository, here](https://github.com/sergiocorreia/quipucamayoc)
+For an overview of how to use  `quipucamayoc` to digitize historical data, see [this research article](http://scorreia.com/research/digitizing.pdf), which amongst other things details the different steps involved, the methods used, and provides practical examples.
+For an user guide, documentation, and installation instructions, see <http://scorreia.com/software/quipucamayoc/> (TODO).
 
+If you want to contribute by improving the code or extending its functionality (much welcome!), head [here](/CONTRIBUTING.md).
 
-## Version Notes
-To use this version, you must follow the installation notes for git below. This version is not available through `pypi`.
-This version has several added features under development.
-Notably, 
-- output can now be specified with `-o` to output a csv file, in addition to a tsv as default.
-- Output can also be turned to a single file using `--page-append N`, rather than to a file per table found. For files with multi-page tables (especially where all tables in the file have the same construction), this is remarkably useful. For example, if the each header takes up 2 rows, then `--page-append 2` will keep the first table intact, and append each following table with the first 2 rows removed.
-- Timeouts are now fully caught, where previously upon timeout it could simply pass as though it had succeeded
-- Directory now works when used with `-d "dir" --extension pdf`. All files are sent to AWS, then all files are waited on, which ideally means that wait times get shorter for each returned file. 
-- Output directory can now be specified with `--output-dir`. If none is specified,
-files go to a directory nested in the same directory as the file, and directories
-go to a directory in the same directory as the directory.
 
 ## Installation
 
+### Pip
 
+To manage quipucamayoc using pip, open the command line and run:
+
+- `pip install quipucamayoc` to install
+    - `pip install "quipucamayoc[dev]"` to include extra dependencies used when developing the code
+- `pip install -U quipucamayoc` to upgrade
+- `pip uninstall quipucamayoc` to remove
 
 Note that `quipucamayoc` has been tested against Python 3.10 and newer versions, but should also work with Python 3.9.
 

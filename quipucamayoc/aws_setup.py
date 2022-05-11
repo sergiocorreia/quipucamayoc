@@ -191,7 +191,6 @@ def set_user_permissions(quipu, iam_client, logger):
     credentials = iam_client.create_access_key(UserName=quipu.user)['AccessKey']
     access_key_id = credentials['AccessKeyId']
     secret_access_key = credentials['SecretAccessKey']
-    # credentials keys: ['UserName', 'AccessKeyId', 'Status', 'SecretAccessKey', 'CreateDate']
     logger.info(f'  - Access Key ID = "{access_key_id}"')
     logger.info(f'  - Secret Access Key = "{secret_access_key}"')
     return access_key_id, secret_access_key

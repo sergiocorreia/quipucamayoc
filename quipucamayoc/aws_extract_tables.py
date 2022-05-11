@@ -161,8 +161,8 @@ def run_textract_async(filename, request_token, config, logger):
     return job_id
 
 
-def wait(attempt, s):
-    n=30
+def wait(attempt, sleep_length):
+    n = 30
     if attempt % n == 0:
         if attempt:
             #newline every n dots
@@ -171,7 +171,7 @@ def wait(attempt, s):
     else:
         print('.', end='')
         sys.stdout.flush()
-        time.sleep(s) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
+        time.sleep(sleep_length) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
         return True
 
 
@@ -181,8 +181,8 @@ def wait_textract_async(job_id, output_path, config, logger, output, page_append
     tic = time.perf_counter()
     sqs_client = config.session.client('sqs')
     max_seconds_waiting = 7200
-    time_per_attempt = 3
-    max_attempts = int(max_seconds_waiting / time_per_attempt) # 3600 * 2sec wait = 7200 sec
+    sleep_length = 3
+    max_attempts = int(max_seconds_waiting / sleep_length) # 3600 * 2sec wait = 7200 sec
 
     try:
         succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output, page_append)
@@ -197,11 +197,11 @@ def wait_textract_async(job_id, output_path, config, logger, output, page_append
     logger.info(' - Waiting in queue for messages...')
     has_dots = False
 
-    for attempt in range(max_attempts):   
+    for attempt in range(max_attempts):
         sqs_response = sqs_client.receive_message(QueueUrl=config.queue_url, MessageAttributeNames=['ALL'], MaxNumberOfMessages=10)
         if sqs_response:
             if 'Messages' not in sqs_response:
-                has_dots = wait(attempt, time_per_attempt)
+                has_dots = wait(attempt, sleep_length=sleep_length)
                 continue
             elif has_dots:
                 print()
@@ -295,7 +295,7 @@ def download_and_save_tables(job_id, path, config, logger, output, page_append):
     pagination_token = None  # Allows us to retrieve the next set of blocks (1-255)
     
     if output is None:
-        output="tsv"
+        output = "tsv"
 
     children = {}
     blocks_map = {}
@@ -538,10 +538,10 @@ def aws_extract_tables(filename: str = None, directory: str = None, extension: s
     if (directory is not None) and (extension is None):
         raise SystemExit("Error: --directory option requires --extension")
     if (extension is not None):
-        assert extension in ('pdf', 'png', 'jpg', 'tiff')
+        assert extension in ('pdf', 'png', 'jpg', 'jpeg', 'tiff')
     #Ideally more output formats to come!
     if (output is not None):
-        assert output in ('csv','tsv')
+        assert output in ('csv', 'tsv')
     if (output_dir is not None):
         output_dir = Path(output_dir)
         if not output_dir.is_dir():
