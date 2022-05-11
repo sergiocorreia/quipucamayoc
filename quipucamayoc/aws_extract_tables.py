@@ -45,8 +45,8 @@ from .aws_setup import QUIPU
 
 def filename2document(filename):
     assert isinstance(filename, Path)
-    extension = filename.suffix[1:]
-    assert extension in ('pdf', 'png', 'jpg', 'tiff'), extension  # TODO: handle unusual cases like .jpeg and .PDF (upper case)
+    extension = filename.suffix[1:].lower()
+    assert extension in ('pdf', 'png', 'jpg', 'jpeg', 'tiff'), extension
     document = f'{extension}/{filename.name}'
     return document
 
@@ -551,7 +551,6 @@ def aws_extract_tables(filename: str = None, directory: str = None, extension: s
     if (page_append is not None):
         page_append = int(page_append)
         assert page_append >= 0
-
 
     # Configuration details
     config = QUIPU()
