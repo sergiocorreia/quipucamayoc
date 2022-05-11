@@ -30,6 +30,7 @@ import json
 import time
 import hashlib
 from pathlib import Path
+import os
 from collections import Counter, defaultdict
 
 import boto3
@@ -160,27 +161,31 @@ def run_textract_async(filename, request_token, config, logger):
     return job_id
 
 
-def wait(attempt):
-    if attempt % 20 == 0:
+def wait(attempt, sleep_length):
+    n = 30
+    if attempt % n == 0:
         if attempt:
+            #newline every n dots
             print()
             return False
     else:
         print('.', end='')
         sys.stdout.flush()
-        time.sleep(2) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
+        time.sleep(sleep_length) # TODO: add some sort of back-off to avoid polling so often (or use 5secs)
         return True
 
 
-def wait_textract_async(filename, job_id, output_path, config, logger):
+def wait_textract_async(job_id, output_path, config, logger, output, page_append):
 
     logger.info('Waiting for job completion:')
     tic = time.perf_counter()
     sqs_client = config.session.client('sqs')
-    max_attempts = 3600
+    max_seconds_waiting = 7200
+    sleep_length = 3
+    max_attempts = int(max_seconds_waiting / sleep_length) # 3600 * 2sec wait = 7200 sec
 
     try:
-        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger)
+        succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output, page_append)
         if succeeded:
             logger.warning(' - Job ID already existed on Textract; perhaps due to an early aborted run')
             return
@@ -196,7 +201,7 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
         sqs_response = sqs_client.receive_message(QueueUrl=config.queue_url, MessageAttributeNames=['ALL'], MaxNumberOfMessages=10)
         if sqs_response:
             if 'Messages' not in sqs_response:
-                has_dots = wait(attempt)
+                has_dots = wait(attempt, sleep_length=sleep_length)
                 continue
             elif has_dots:
                 print()
@@ -214,16 +219,71 @@ def wait_textract_async(filename, job_id, output_path, config, logger):
                     job_found = True
                     toc = time.perf_counter()
                     logger.info(f' - Elapsed time: {toc - tic:6.2f}s')
-                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger)
+                    succeeded, job_status = download_and_save_tables(job_id, output_path, config, logger, output, page_append)
                     if not succeeded:
                         raise Exception(f"AWS Textract job status did not succeed (job-status='job_status')")
                     sqs_client.delete_message(QueueUrl=config.queue_url, ReceiptHandle=message['ReceiptHandle'])
                     return
                 else:
                     logger.info(f'   Job didn\'t match: "{job_id}" vs "{received_job_id}"')
+    #all attempts failed to hit 'return' from function
+    raise SystemExit("No response within response interval")
 
 
-def download_and_save_tables(job_id, path, config, logger):
+def save_to_file(object, path, logger, output):
+    assert path.parent.exists()
+    path.touch()
+    with path.open(mode='w', newline='', encoding='utf-8') as f:
+        logger.info(f'   Saving file "{path.name}"')
+        if output == "tsv":
+            writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
+        elif output == "csv":
+            writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+
+        writer.writerows(object)
+
+
+def save_tables_to_outputs(path, logger, output, table_ids, blocks_map):
+    """Saves each found table to a separate output"""
+
+    table_counter = Counter()
+
+    for table_id in table_ids:
+        logger.info(f' - Parsing table')
+        # TODO: if results are unsorted, use Block['Geometry']['BoundingBox']['Top'] to sort and then save at the end
+        
+        ans = generate_table(table_id, blocks_map, logger)
+        page = blocks_map[table_id]['Page']
+        table_counter[page] += 1
+        table_num = table_counter[page]
+        fn = path / (f'{page:04}-{table_num:02}.' + output)
+        save_to_file(ans, fn, logger, output)
+
+        
+
+def save_file_to_output(path, logger, output, table_ids, blocks_map, page_append):
+    """Saves all tables into a single output file, assumes same shape"""
+
+    first_table = True
+    full_ans = None
+    for table_id in table_ids:
+        logger.info(f' - Parsing table')
+        
+        if first_table:
+            full_ans = generate_table(table_id, blocks_map, logger)
+            first_table = False
+        else: 
+            #Cut header row
+            ans = generate_table(table_id, blocks_map, logger)
+            #Skip n rows (header) on subsequent tables
+            ans = ans[page_append::]
+            full_ans = full_ans + ans
+    #TODO: when save_all_to_file enabled, set pathname earlier in pipeline
+    fn = Path(str(path) + (f'.'+output))
+    save_to_file(full_ans, fn, logger, output)
+
+
+def download_and_save_tables(job_id, path, config, logger, output, page_append):
     '''
     Download all the tables returned by Textract, and save them in the -path- folder with format:
     0123-09.tsv (table 9 of page 123)
@@ -233,6 +293,9 @@ def download_and_save_tables(job_id, path, config, logger):
     textract_client = config.session.client('textract')
     max_results = 1000  # Maximum number of blocks returned per request (1-1000)
     pagination_token = None  # Allows us to retrieve the next set of blocks (1-255)
+    
+    if output is None:
+        output = "tsv"
 
     children = {}
     blocks_map = {}
@@ -287,27 +350,20 @@ def download_and_save_tables(job_id, path, config, logger):
     logger.info(' - Counts by block type:')
     for block_type, n in counter.items():
         logger.info(f'   - "{block_type}": {n}')
-    
-    table_counter = Counter()
-    for table_id in table_ids:
-        logger.info(f' - Parsing table')
-        # TODO: if results are unsorted, use Block['Geometry']['BoundingBox']['Top'] to sort and then save at the end
-        
-        ans = generate_table(table_id, blocks_map, logger)
-        page = blocks_map[table_id]['Page']
-        table_counter[page] += 1
-        table_num = table_counter[page]
-        fn = path / f'{page:04}-{table_num:02}.tsv'
 
-        with fn.open(mode='w', newline='', encoding='utf-8') as f:
-            logger.info(f'   Saving file "{fn.name}"')
-            writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
-            writer.writerows(ans)
+    if(page_append is not None):
+        save_file_to_output(path, logger, output, table_ids, blocks_map, page_append)
+    else:
+        save_tables_to_outputs(path, logger, output, table_ids, blocks_map)
+
+    
 
     return True, 'SUCCEEDED'  # Success
 
 
+
 def generate_table(table_id, blocks_map, logger):
+    '''Generates as a [[]] list the table for the input'''
     rows = defaultdict(dict)
     table_result = blocks_map[table_id]
     for relationship in table_result['Relationships']:
@@ -349,11 +405,126 @@ def get_text(result, blocks_map):
     return text, warning
 
 
+def aws_extract_from_file_send(config, filename, output_path, ignore_cache):
+    """Sends the job to AWS"""
+
+    print(f'Extracting tables from {filename.name} with AWS Textract')
+    
+    done_path = output_path / (filename.stem + '.done')
+    is_done = done_path.is_file() and not ignore_cache
+
+    if is_done:
+        logger.success(f'File "{filename}" already processed; skipping')
+        exit()
+        
+    logger.info(f'Hashing file..."{filename.stem}"')
+    request_token = hash_file(filename)
+    upload_file(filename, config, logger)
+    job_id = run_textract_async(filename, request_token, config, logger)
+    
+    print()
+    print(f'File "{filename}" sent!')
+    return job_id
+    
+
+
+def aws_extract_from_file_receive(filename, job_id, output_path, config, output, page_append, keep_in_s3):
+    """Receives AWS job, this step occurs separately to allow multiple
+    jobs to be sent before any are received."""
+
+    if(page_append):
+        output_path = output_path / filename.stem
+    logger.info(f'Receiving {filename}')
+    wait_textract_async(job_id, output_path, config, logger, output, page_append)
+    
+    done_path = output_path.parent / (filename.stem + '.done')
+    print(done_path)
+    if not keep_in_s3:
+        delete_file(filename, config, logger)
+
+    done_path.touch()
+    print()
+    print(f'File "{filename}" processed!')
+
+
+
+def aws_extract_from_directory(config, directory, extension, keep_in_s3, ignore_cache, output, page_append, output_dir):
+    """Performs extraction over all files in a directory"""
+
+    directory = Path(directory)
+    filenames = list(directory.glob(f'*.{extension}'))
+
+    if output_dir is None:
+        #Ensure right dir getting created
+        output_dir = directory.parent / (f'textract-' + directory.stem)
+        output_dir.mkdir(exist_ok=True)
+
+    logger.info(f'{output_dir} exists')
+    done_path = output_dir / (directory.stem + '.done')
+    is_done = done_path.is_file() and not ignore_cache
+    if is_done:
+        logger.success(f'File "{filename}" already processed; skipping')
+        exit()
+
+    job_ids = []
+
+    #Send off files
+    for filename in filenames:
+            assert filename.is_file()
+            file_id = aws_extract_from_file_send(
+                    config, 
+                    filename, 
+                    output_dir, 
+                    ignore_cache)
+            job_ids.append(file_id)
+
+    #And receive back each files job
+    for (filename, job_id) in zip(filenames, job_ids):
+        aws_extract_from_file_receive(
+            filename,
+            job_id, 
+            output_dir, 
+            config, output, 
+            page_append, 
+            keep_in_s3)
+
+    done_files = list(output_dir.glob(f'*.done'))
+    done_files = [str(f) for f in done_files]
+  
+    logger.info("\n")
+    try:
+        assert len(done_files)==len(filenames)
+    except AssertionError:
+        logger.warning("# of .done Files does not match # of pdfs, check .done log!!!")
+
+    #remove other done files
+    for done_file in done_files:
+        os.remove(done_file)
+    
+    done_path.touch()
+    with open(done_path, 'w') as f:
+        f.write('\n'.join(done_files))
+    print()
+    print(f'Directory "{directory}" processed!')
+    
+
+
+def aws_extract_from_filename(config, filename, keep_in_s3, ignore_cache, output, page_append, output_dir):
+    "Performs extraction over a single file"
+
+    if output_dir is None:
+        output_dir = filename.parent / ('textract-' + filename.stem)
+        # won't overwrite existing directory
+        output_dir.mkdir(exist_ok=True)
+
+    job_id = aws_extract_from_file_send(config, filename, output_dir, ignore_cache)
+    aws_extract_from_file_receive(filename, job_id, output_dir, config, output, page_append, keep_in_s3)
+
 # ---------------------------
 # Main function
 # ---------------------------
 
-def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3=False, ignore_cache=False):
+def aws_extract_tables(filename: str = None, directory: str = None, extension: str=None, keep_in_s3: bool=False, ignore_cache: bool=False, output: str=None, page_append: int=None, output_dir: str=None):
 
     # Logging details
     log_format = '<green>{time:HH:mm:ss.S}</green> | <level>{level: <8}</level> | <blue><level>{message}</level></blue>'
@@ -368,6 +539,18 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
         raise SystemExit("Error: --directory option requires --extension")
     if (extension is not None):
         assert extension in ('pdf', 'png', 'jpg', 'jpeg', 'tiff')
+    #Ideally more output formats to come!
+    if (output is not None):
+        assert output in ('csv', 'tsv')
+    if (output_dir is not None):
+        output_dir = Path(output_dir)
+        if not output_dir.is_dir():
+            #If dir doesn't exist, parent must
+            assert output_dir.parent.is_dir()
+            output_dir.mkdir()
+    if (page_append is not None):
+        page_append = int(page_append)
+        assert page_append >= 0
 
     # Configuration details
     config = QUIPU()
@@ -375,46 +558,34 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
 
     # [1] Single files (PDFs or images)
     if filename is not None:
-        print(f'Extracting tables from {filename.name} with AWS Textract')
-        output_path = filename.parent / ('textract-' + filename.stem)
-        output_path.mkdir(exist_ok=True)
-        done_path = output_path / (filename.stem + '.done')
-        is_done = done_path.is_file() and not ignore_cache
-
-        if is_done:
-            logger.success(f'File "{filename}" already processed; skipping')
-            exit()
-
-        keep_in_s3 = True
-        
-        logger.info(f'Hashing file...')
-        request_token = hash_file(filename)
-        upload_file(filename, config, logger)
-        job_id = run_textract_async(filename, request_token, config, logger)
-        if not keep_in_s3:
-            delete_file(filename, config, logger)
-        wait_textract_async(filename, job_id, output_path, config, logger)
-
-        done_path.touch()
-        print()
-        print(f'File "{filename}" processed!')
+        aws_extract_from_filename(config, 
+                                  filename, 
+                                  keep_in_s3, 
+                                  ignore_cache, 
+                                  output, 
+                                  page_append,
+                                  output_dir)
         exit()
 
 
     # [2] and [3] Folders
-    directory = Path(directory)
-    filenames = directory.glob(f'*.{extension}')
-    raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
-
+    
 
     # [2] Folders with multiple PDFs
     if extension=='pdf':
-        for filename in filenames:
-            print(f'{filename=}')
-            assert filename.is_file()
-            raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
+        aws_extract_from_directory(config, 
+                                   directory, 
+                                   extension, 
+                                   keep_in_s3, 
+                                   ignore_cache, 
+                                   output, 
+                                   page_append,
+                                   output_dir)
+        
+        #raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
         exit()
 
+    raise SystemExit("QUIPUCAMAYOC INTERNAL ERROR: Incomplete function")
 
     # [3] Folders with multiple images representing a single PDF
     for filename in filenames:
