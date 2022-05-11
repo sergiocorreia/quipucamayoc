@@ -44,8 +44,8 @@ from .aws_setup import QUIPU
 
 def filename2document(filename):
     assert isinstance(filename, Path)
-    extension = filename.suffix[1:]
-    assert extension in ('pdf', 'png', 'jpg', 'tiff'), extension  # TODO: handle unusual cases like .jpeg and .PDF (upper case)
+    extension = filename.suffix[1:].lower()
+    assert extension in ('pdf', 'png', 'jpg', 'jpeg', 'tiff'), extension
     document = f'{extension}/{filename.name}'
     return document
 
@@ -367,7 +367,7 @@ def aws_extract_tables(filename=None, directory=None, extension=None, keep_in_s3
     if (directory is not None) and (extension is None):
         raise SystemExit("Error: --directory option requires --extension")
     if (extension is not None):
-        assert extension in ('pdf', 'png', 'jpg', 'tiff')
+        assert extension in ('pdf', 'png', 'jpg', 'jpeg', 'tiff')
 
     # Configuration details
     config = QUIPU()
