@@ -1,0 +1,7 @@
+# See:
+# - https://python-packaging.readthedocs.io/en/latest/non-code-files.html
+# - https://packaging.python.org/en/latest/guides/using-manifest-in/
+# - https://jwodder.github.io/kbits/posts/pypkg-data/
+
+include poppler-windows/*.dll
+include poppler-windows/*.exe

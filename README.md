@@ -8,6 +8,7 @@
 [![GitHub Releases](https://img.shields.io/github/tag/sergiocorreia/quipucamayoc.svg?label=github+release)](https://github.com/sergiocorreia/quipucamayoc/releases)
 [![Python version](https://img.shields.io/pypi/pyversions/quipucamayoc.svg)](https://pypi.python.org/pypi/quipucamayoc/)
 [![Supported implementations](https://img.shields.io/pypi/implementation/quipucamayoc.svg)](https://pypi.org/project/quipucamayoc)
+[![Poppler version](https://img.shields.io/badge/dependencies-poppler%2022.04.0-blue)](https://poppler.freedesktop.org/)
 
 [quipucamayoc](http://scorreia.com/software/quipucamayoc/) is a Python package that simplifies the extraction of historical data from scanned images and PDFs.
 It's designed to be modular and so it can be used together with other existing tools, and can be extended easily by users.

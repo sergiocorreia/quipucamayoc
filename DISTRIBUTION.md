@@ -37,3 +37,7 @@ py -m twine upload --repository pypi dist/*
 - Example .cfg files are:
 	- https://github.com/pallets/click/blob/main/setup.cfg
 	- https://github.com/pandas-dev/pandas/blob/main/setup.cfg
+
+For help on distributing extra files on install, see:
+
+- https://jwodder.github.io/kbits/posts/pypkg-data/
