@@ -1,5 +1,14 @@
 ## Generating distribution archives
 
+First, ensure build and twine are installed:
+
+```
+py -m pip install --upgrade build
+py -m pip install --upgrade twine
+```
+
+Then, to build:
+
 ```
 py -m build
 ```

@@ -2,6 +2,7 @@
 requires = [
     "setuptools>=48",
     "wheel",
-    "flake8"
+    "flake8",
+    "twine>=4.0.1"
 ]
 build-backend = "setuptools.build_meta"

@@ -13,3 +13,7 @@ from .cli import cli
 from .aws_extract_tables import aws_extract_tables
 from .aws_setup import install_aws
 from .aws_setup import uninstall_aws
+
+from .document import Document
+#from .pdf import PDF
+from .poppler_wrapper import Poppler

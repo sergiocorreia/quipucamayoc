@@ -3,5 +3,5 @@
 # - https://packaging.python.org/en/latest/guides/using-manifest-in/
 # - https://jwodder.github.io/kbits/posts/pypkg-data/
 
-include poppler-windows/*.dll
-include poppler-windows/*.exe
+include quipucamayoc/poppler-windows/*.dll
+include quipucamayoc/poppler-windows/*.exe

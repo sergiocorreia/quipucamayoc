@@ -9,7 +9,7 @@ Sadly as of 2022 there are no [multi-platform Python bindings](https://github.co
 
 1. Install the latest release from the [poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases) Github repo.
 2. Alternatively, install Poppler on Windows using Anaconda
-3. Experimentally, `quipucamayoc` includes Poppler, although it might correspond to the latest version released.
+3. Experimentally, `quipucamayoc` includes Poppler, although it might not correspond to the latest available release.
 
 Note that for simplicity we include all files from `poppler-windows` (37 items; 20mb uncompressed) but only a subset is needed (18 files, 15mb):
 
