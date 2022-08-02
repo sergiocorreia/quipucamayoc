@@ -220,7 +220,9 @@ class PDF:
         #    print(f' - Exporting images from pages {first_page}-{last_page}')
         path = self.cache_folder / 'img_raw' / 'image'
         
-        msg = 'Extracting images from pages'
+        if verbose:
+            print_update('Extracting images from pages')
+        msg = ' [green]- Running pdfimage            '
         for page in track(range(first_page, last_page+1), description=msg):
             ## # Skip if cache and final image already exists
             ## if self.cache:
@@ -240,25 +242,34 @@ class PDF:
         '''
 
         if verbose:
-            print_update('Detecting watermarks...')
+            print_update('Detecting and deleting watermarks')
 
         path = self.cache_folder / 'img_raw'
         assert path.is_dir()
-        fns = path.glob('image-*')  # pdfimages extracts images with structure "image-<page>-<iter>.ext"
+        fns = list(path.glob('image-*'))  # pdfimages extracts images with structure "image-<page>-<iter>.ext"
         items = collections.defaultdict(list)
         
         # Collect size and checksum of all images
-        for fn in fns:
+        msg = ' [green]- Detecting watermarks        '
+        for fn in track(fns, description=msg):
             size = os.path.getsize(fn)
             checksum = hashlib.md5(fn.open('rb').read()).hexdigest()
             items[(size, checksum)].append(fn)
 
         # Delete watermark images
-        for fns in items.values():
+        msg = ' [green]- Deleting watermarks         '
+        num_deleted = 0
+        for fns in track(items.values(), description=msg):
             n = len(fns)
             if n > 1:
-                if verbose:
-                    print_update(f' - Deleting {n} images with the same size and hash')
+                num_deleted += n
+                #if verbose:
+                #    print(f'     - Deleting {n} images with the same size and hash')
+                
+                # Copy watermarks to watermark folder, for later debugging
+                # TODO
+
+                # View watermarks (in debug mode)
                 if debug:
                     # Show each watermark once for 1s
                     image = cv2.imread(str(fns[0]))
@@ -267,3 +278,122 @@ class PDF:
                     cv2.destroyAllWindows()
                 for fn in fns:
                     fn.unlink()
+        
+        if num_deleted:
+             print_update(f' - {num_deleted} watermarks deleted')
+
+
+    def combine_images(self, verbose=False, debug=False):
+        '''Some PDFs from e.g. Google Books have multiple images per page
+
+        This function stitches those images back together, taking input
+        from the <cache_folder>/img_raw folder and saving output into
+        the <cache_folder>/img_clean folder.
+
+        It needs to be run after all watermarks are deleted but before any
+        corrections or OCR are done
+        '''
+
+        if verbose:
+            print_update('Combining images within a page')
+
+        input_path = self.cache_folder / 'img_raw'
+        output_path = self.cache_folder / 'img_clean'
+        assert input_path.is_dir()
+
+        # Assign images to pages
+        fns = input_path.glob('image-*')  # pdfimages extracts images with structure "image-<page>-<iter>.ext"
+        pages = collections.defaultdict(list)
+        for fn in fns:
+            #print(fn.name)
+            prefix, page, i = fn.stem.split('-')
+            page = int(page)
+            pages[page].append(fn)
+
+        # Rename images that occur only one per page, fix the others
+        msg = ' [green]- Processing images           '
+        for page, fns in track(pages.items(), description=msg):
+            suffix = fns[0].suffix
+            assert suffix in ('.jpg', '.png', '.jp2'), suffix
+            new_fn = output_path / f'page-{page:04}{suffix}'
+            assert not new_fn.is_file()
+            
+            if len(fns) == 1:
+                fns[0].rename(new_fn)
+            else:
+                if verbose:
+                    print_update('f - Fixing page {page} (contains {len(fns)} images)')
+                self._merge_page(page, fns, new_fn)
+            
+            ## Rotate image
+            #if rotate:
+            #    self._rotate_page(new_fn, page)
+
+
+    def _merge_page(self, page, image_fns, new_fn):
+        tmp_path = self.cache_folder / 'tmp' / str(page)
+        shutil.rmtree(tmp_path, ignore_errors = True) # Delete in case it already exists
+        tmp_path.mkdir() # exist_ok = False
+
+        path = str(tmp_path / 'dump')  # Add filename suffix
+        self.poppler.get_page_info(self, filename, path, page, verbose=verbose)
+
+        #TODO: UPDATE THIS AS NEEDED
+        assert 0
+
+        # Parse XML file
+        xml_fn = prefix_path + '.xml'
+        print('     - Parsing', xml_fn)
+        tree = etree.parse(xml_fn)
+        response = tree.xpath('//image')
+
+        # We want to map (width, height) -> (top, left)
+        # This will be done in two steps
+
+        # 1. Map each filename to (top, left) coordinates
+        fn2pos = {}
+        for el in response:
+            fn = el.attrib['src']
+            extension = Path(fn).suffix
+            top = convert_unit(el.attrib['top'])
+            left = convert_unit(el.attrib['left'])
+            width = convert_unit(el.attrib['width'])
+            height = convert_unit(el.attrib['height'])
+            fn2pos[fn] = (width, height, top, left)
+        self.extension = extension
+        assert extension in ('.png', '.jpg'), extension
+
+        # 2. Map (height, width) to filename
+        coords2pos = {}
+        for tmp_fn in tmp_path.glob(f'dump*{extension}'):
+            im = Image.open(tmp_fn)
+            pos = fn2pos[str(tmp_fn).replace('/', '\\')]
+            coords2pos[im.size] = pos
+        assert coords2pos
+
+        # Then, get the position of each non-watermark image
+        positions = {}
+        for fn in image_fns:
+            im = Image.open(fn)
+            wh = im.size
+            print('     - Size:', im.size, 'info:', im.info)  # size = im.width, im.height
+            if wh in coords2pos:
+                #whtl = im.size + coords2pos[im.size] # not sure why this gives the wrong sizes..
+                whtl = coords2pos[im.size]
+                whtl = tuple(float(x) for x in whtl) # convert int to float, so we can later test them against a box
+                positions[fn] = whtl # fn -> (width, height, top, left)
+
+        #print(positions)
+        im = merge_images(positions)
+        print('Format is', im.format)
+        #im.convert('L')
+        im.save(new_fn, optimize=True) # dpi=(72, 72) ... or maybe take them from the input image?
+        im.save(str(new_fn).replace('.png', '.jpg'), optimize=True) # dpi=(72, 72) ... or maybe take them from the input image?
+        #http://pillow.readthedocs.io/en/4.3.x/handbook/image-file-formats.html#png
+        
+        if not keep_raw_images:
+            for fn in image_fns:
+                fn.unlink()
+
+        # Delete the folder
+        shutil.rmtree(tmp_path, ignore_errors = True)

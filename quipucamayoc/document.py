@@ -19,7 +19,9 @@ import sys
 
 import rich
 
+from .page import Page
 from .pdf import PDF
+from .utils import *
 
 
 # ---------------------------
@@ -45,6 +47,8 @@ class Document:
         else:
             raise NotImplementedError
 
+        self.cache_folder = self.core.cache_folder  # Duplicate for convenience
+
 
     def describe(self):
         self.core.describe()
@@ -54,9 +58,24 @@ class Document:
         self.core.extract_images(first_page, last_page, verbose)
 
 
-    def delete_watermarks(self, verbose=False, debug=False):
+    def cleanup_images(self, verbose=False, debug=False):
         if self.is_pdf:
             self.core.delete_watermarks(verbose, debug)
-        else:
-            pass  # No watermarks in pictures
+            self.core.combine_images(verbose, debug)
+
+
+    def initialize_pages(self, verbose=False):
+        path = self.cache_folder / 'img_clean'
+        fns = path.glob('page-*')
+        pages = dict()
+        for fn in fns:
+            prefix, page = fn.stem.split('-')
+            page = int(page)
+            pages[page] = fn
+
+        if verbose:
+            print_update(f'Initializing {len(pages)} pages')
+
+        self.pages = [Page(pagenum, fn, self) for pagenum, fn in pages.items()]
+
 

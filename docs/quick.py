@@ -12,11 +12,24 @@ doc = q.Document(fn, cache_folder='C:/WH/quipu', verbose=True)
 
 doc.describe()
 doc.extract_images(first_page=1, last_page=3, verbose=True)
-doc.delete_watermarks(verbose=True, debug=False)
+doc.cleanup_images(verbose=True, debug=False)
+doc.initialize_pages(verbose=True)
+
+page = doc.pages[0]
+#print(page.filename)
+#print(page.pagenum)
+
+page.load()
+#page.view(wait=1000)
+page.remove_black_background(verbose=True, debug=True)
+#page.view(wait=1000)
+
+page.remove_fore_edges()
+
 
 
 #from PIL import Image
 #with Image.open("C:/WH/borrar/-001-000.jp2") as im:
 #    im.rotate(45).show()
 
-print('Done')
+print('\nDone!')

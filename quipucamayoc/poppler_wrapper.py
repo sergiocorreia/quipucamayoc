@@ -98,3 +98,9 @@ class Poppler:
         #if verbose:
         #    print('   [CMD]', self.pdfimages, ' '.join(str(x) for x in args))
         c = Command(self.pdfimages, args)
+
+
+    def get_page_info(self, filename, path, page, verbose=False):
+        args = ['-xml', '-nomerge', '-zoom', '1', '-f', str(page), '-l', str(page), filename, path]
+        # we need "-zoom 1" else it defaults to 1.5 and messes up the unit conversion
+        c = Command(PDFTOHTML, args)
