@@ -8,6 +8,9 @@ TODO:
       an alternative we might want to try to use the line detection algo. (canny)
     - remove_fore_edges() might want to exploit the fact that page sizes often have
       very specific aspect ratios.
+    - Dewarp ML functions could be implemented as a Class to save state;
+      else they will be very slow with multiple pages as they have to load the model
+      each time.
 '''
 
 # ---------------------------
@@ -39,7 +42,8 @@ from .utils import *
 from .image_utils import *
 
 
-from .dewarpnet import dewarpnet
+from .DewarpNet import DewarpNet
+from .DocTr import DocTr
 
 # ---------------------------
 # Constants
@@ -80,10 +84,12 @@ class Page:
         self.image = None
 
 
-    def save(self, verbose=False, debug=False):
+    def save(self, debug_name=None, verbose=False, debug=False):
+        # debug_name allows us to save it to a different location for comparison/debugging purposes
+        filename = (self.doc.cache_folder / debug_name) if debug_name is not None else self.filename
         if verbose:
-            print_update(f' -  Saving image to disk ({self.filename})')
-        save_image(self.image, self.filename, verbose=False)
+            print_update(f' -  Saving image to disk ({filename})')
+        save_image(self.image, filename, verbose=False)
 
 
     def view(self, wait=0):
@@ -242,7 +248,7 @@ class Page:
             # = color:      Color of the contours.
             # = thickness:  Thickness of lines the contours are drawn with. If it is negative, the interiors of the contour are filled with the colour specified.
             debug_save(im2, debug_path, '5-contours')
-            print(len(contours))
+            #print(len(contours))
 
         # 7) Find largest rectangle
         # - If there are no rectangles, abort
@@ -316,11 +322,32 @@ class Page:
             debug_save(self.image, debug_path, '8-results')
 
 
-    def dewarp(self, method='simple',
-            wc_model_path=None, bm_model_path=None,
+    def dewarp(self, method='simple', model_path=None,
+            rectify_illumination=False,
             verbose=False, debug=False):
 
-        assert method in ('simple', 'dewarpnet')
+        '''Dewarp function; calling alternative dewarp methods.
+
+        For a more comprehensive list of dewarp methods, see:
+        https://github.com/fh2019ustc/Awesome-Document-Image-Rectification
+
+        Within that list, these packages have github links:
+        - DocProj               : [✗] uses an .exe file for stitching
+        - DewarpNet             : [✓] implemented
+        - ..displacement flow.. : [✗] couldn't get inference to run
+        - DocTr                 : [✓] implemented
+        - PiecewiseUnwarp       : [✗] no code yet
+        - ..control points..    : [✗] couldn't get inference to run
+        - Marior                : [✗] no code yet
+        - PaperEdge             : [✗] new; code and pre-trained data partly there
+
+        Also:
+        - PageDewarp https://github.com/lmmx/page-dewarp (works quite well for some cases)
+        - https://safjan.com/tools-for-doc-deskewing-and-dewarping/
+        '''
+
+        method = method.lower()  # Allows for DewarpNet, DocTr, etc.
+        assert method in ('simple', 'dewarpnet', 'doctr')
 
         if verbose:
             print_update(f' - Dewarping page {self.pagenum} (method={method})')
@@ -329,14 +356,18 @@ class Page:
             debug_path = create_folder(self.doc.cache_folder / 'tmp' / 'dewarp', delete_before=True, try_again=True)
             debug_save(self.image, debug_path, '0-original')
 
-        if method=='simple':
+        if method == 'simple':
            dewarped, ok = self._dewarp_simple(verbose, debug)
-        elif method=='dewarpnet':
-            if wc_model_path is None:
-                error_and_exit('wc_model_path is None')
-            dewarped, ok = dewarpnet(self.image,
-                wc_model_path=wc_model_path, bm_model_path=bm_model_path,
-                verbose=verbose, debug=debug)
+        elif method == 'dewarpnet':
+            if model_path is None:
+                error_and_exit('model_path is None')
+            dewarped, ok = DewarpNet(self.image, model_path, self.doc.models, verbose=verbose, debug=debug)
+        elif method == 'doctr':
+            if model_path is None:
+                error_and_exit('model_path is None')
+            dewarped, ok = DocTr(self.image, model_path, self.doc.models, rectify_illumination=rectify_illumination, verbose=verbose, debug=debug)
+        else:
+            raise Exception
 
         if verbose:
             print_update(f'   - Dewarp worked? {ok}')
@@ -380,6 +411,11 @@ class Page:
         contours = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         contours = grab_contours(contours)
         contours = sorted(contours, key = cv2.contourArea, reverse = True)[:5]
+
+        if not contours:
+            print_update(f'   - No contours detected; [red]stopping')
+            return None, False
+        
         # loop over the contours
         for c in contours:
             # approximate the contour
@@ -390,6 +426,10 @@ class Page:
             if len(approx) == 4:
                 screenCnt = approx
                 break
+        else:
+            print_update(f'   - No approximated contour detected with four points; [red]stopping')
+            return None, False
+
         # show the contour (outline) of the piece of paper
         if debug:
             im2 = cv2.drawContours(self.image.copy(), [screenCnt], -1, (0, 255, 0), 2)

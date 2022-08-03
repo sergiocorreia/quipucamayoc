@@ -63,13 +63,15 @@ def unwarp(img, bm):
     return res
 
 
-def dewarpnet(img_original, wc_model_path, bm_model_path, verbose=False, debug=False):
-    # img_original  : image loaded with cv2.imread; in COLOR_BGR format
-    # wc_model_path : filename for world coord regression model
-    # bm_model_path : filename for backward mapping regression
+def initialize(model_path, model_dict, verbose=False):
+    if 'DewarpNet' in model_dict:
+        return model_dict['DewarpNet']
 
-    wc_model_path = Path(wc_model_path)
-    bm_model_path = Path(bm_model_path)
+    if verbose:
+        print('Loading pre-trained DewarpNet model', flush=True)
+
+    wc_model_path = Path(model_path / 'unetnc_doc3d.pkl')
+    bm_model_path = Path(model_path / 'dnetccnl_doc3d.pkl')
     
     if not wc_model_path.is_file():
         msg = f'DewarpNet: WC model file not found: {wc_model_path}'
@@ -84,18 +86,6 @@ def dewarpnet(img_original, wc_model_path, bm_model_path, verbose=False, debug=F
 
     wc_n_classes = 3
     bm_n_classes = 2
-
-    wc_img_size = (256, 256)
-    bm_img_size = (128, 128)
-
-    img_original = convert_bgr_to_rgb(img_original)
-    img = cv2.resize(img_original, wc_img_size)
-    
-    img = img[:, :, ::-1]
-    img = img.astype(float) / 255.0
-    img = img.transpose(2, 0, 1) # NHWC -> NCHW
-    img = np.expand_dims(img, 0)
-    img = torch.from_numpy(img).float()
 
     # Predict
     htan = nn.Hardtanh(0,1.0)
@@ -113,6 +103,30 @@ def dewarpnet(img_original, wc_model_path, bm_model_path, verbose=False, debug=F
         bm_state = convert_state_dict(torch.load(bm_model_path)['model_state'])
     bm_model.load_state_dict(bm_state)
     bm_model.eval()
+
+    model_dict['DewarpNet'] = htan, wc_model, bm_model
+    return model_dict['DewarpNet']
+
+
+def DewarpNet(img_original, model_path, model_dict, verbose=False, debug=False):
+    # img_original  : image loaded with cv2.imread; in COLOR_BGR format
+    # model_path    : path containing the two models
+    #   wc: world coord regression model
+    #   bm: backward mapping regression model
+
+    htan, wc_model, bm_model = initialize(model_path, model_dict, verbose)
+
+    wc_img_size = (256, 256)
+    bm_img_size = (128, 128)
+
+    img_original = convert_bgr_to_rgb(img_original)
+    img = cv2.resize(img_original, wc_img_size)
+    
+    img = img[:, :, ::-1]
+    img = img.astype(float) / 255.0
+    img = img.transpose(2, 0, 1) # NHWC -> NCHW
+    img = np.expand_dims(img, 0)
+    img = torch.from_numpy(img).float()
 
     if torch.cuda.is_available():
         wc_model.cuda()

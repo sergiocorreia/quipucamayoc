@@ -14,6 +14,7 @@ to be easier to access for Quipucamayoc, and included all related python files
 
 Minor modifications also include:
 
+- Rename `infer.py` into `__init__.py`
 - Remove PyTorch warning by adding align_corners=False to grid_sample() call
 - Make relative packages explicit by adding a dot (e.g. "from .models ...")
 - Removed unused imports (tqdm, matplotlib, json)
@@ -30,6 +31,7 @@ https://drive.google.com/file/d/1hJKCb4eF1AJih_dhZOJSF5VR-ZtRNaap/view?usp=shari
 
 These two models should be unzipped and placed in an accessible place, so their name can be passed to the .dewarp(method='dewarpnet') function
 
+3) Install hdf5storage from pip
 
 # CLI execution
 

@@ -72,6 +72,11 @@ Notes:
 - [ ] Include Poppler by default on Windows
 - [ ] Add mypy/(flake8|black)
 
+### Interesting tools to explore:
+
+- https://github.com/qurator-spk/eynollah
+- https://github.com/qurator-spk/sbb_binarization
+- https://github.com/leonlulu/DeepLayout
 
 ## Contributing
 

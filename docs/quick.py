@@ -17,13 +17,48 @@ doc.describe()
 doc.extract_images(first_page=1, last_page=3, verbose=True)
 doc.initialize_pages(verbose=True)
 
-wc_model_path = Path('C:/WH/dewarpnet/unetnc_doc3d.pkl')
-bm_model_path = Path('C:/WH/dewarpnet/dnetccnl_doc3d.pkl')
+
+pagenum = 0
+
+page = doc.pages[pagenum]
+page.load()
+page.dewarp(method='simple', verbose=True)
+page.save(debug_name='dewarp-simple.jpg', verbose=True)
+page.unload()
+
+
+model_path = Path('C:/WH/models/DewarpNet')
+page = doc.pages[pagenum]
+page.load()
+page.dewarp(method='DewarpNet', model_path=model_path, verbose=True)
+page.save(debug_name='dewarp-DewarpNet.jpg', verbose=True)
+page.unload()
+
+model_path = Path('C:/WH/models/DocTr')
+page = doc.pages[pagenum]
+page.load()
+page.dewarp(method='DocTr', model_path=model_path, rectify_illumination=False, verbose=True)
+page.save(debug_name='dewarp-DocTr1.jpg', verbose=True)
+page.unload()
+
+
+
+# Warning: it seems that rectifying the illumination might get stuck on complicated inputs on CPU
+model_path = Path('C:/WH/models/DocTr')
+page = doc.pages[pagenum]
+page.load()
+page.dewarp(method='DocTr', model_path=model_path, rectify_illumination=True, verbose=True)
+page.save(debug_name='dewarp-DocTr2.jpg', verbose=True)
+page.unload()
+
+exit()
+
+model_path = Path('C:/WH/dewarpnet')
 for page in doc.pages:
 	page.load()
 	#page.view()
 	#page.dewarp(verbose=True, debug=True)
-	page.dewarp(method='dewarpnet', wc_model_path=wc_model_path, bm_model_path=bm_model_path) #, verbose=True, debug=True)
+	page.dewarp(method='dewarpnet', model_path=model_path) #, verbose=True, debug=True)
 	page.save(verbose=True)
 	page.unload()
 

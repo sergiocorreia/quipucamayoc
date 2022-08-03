@@ -50,6 +50,7 @@ class Document:
 
         self.cache_folder = self.core.cache_folder  # Duplicate for convenience
         self.status = {'cleaned': False}
+        self.models = {}  # We'll store the loaded ML models here
 
 
     def describe(self):
