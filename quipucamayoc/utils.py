@@ -4,6 +4,7 @@
 
 import os
 import sys
+import shutil
 #import csv
 #import time
 import shlex
@@ -11,6 +12,7 @@ import shlex
 #import unicodedata
 
 #from pathlib import Path
+import pathlib
 from subprocess import Popen, PIPE
 
 from rich.console import Console
@@ -44,6 +46,36 @@ def robust_mkdir(name):
         print(' - Sleeping 1s due to PermissionError')
         time.sleep(1)
         name.mkdir()
+
+
+def delete_and_create_folder(path):
+    shutil.rmtree(path, ignore_errors = True) # Delete in case it already exists
+    debug_path.mkdir()
+    return path
+
+
+def create_folder(path, exist_ok=False, check_parent=False, delete_before=False, try_again=False):
+    assert isinstance(path, pathlib.PurePath)
+
+    assert not (exist_ok and delete_before), 'Cannot ask to delete beforehand and allow for preexistence'
+
+    if check_parent and not path.parent.is_dir():
+        error_and_exit(f'Folder {path.parent} does not exist; cannot create {path.name}')
+
+    if delete_before:
+        shutil.rmtree(path, ignore_errors=True)
+
+    if try_again:
+        try:
+            path.mkdir(exist_ok=exist_ok)
+        except PermissionError:
+            print(' - Sleeping 1s due to PermissionError')
+            time.sleep(1)
+            path.mkdir(exist_ok=exist_ok)
+    else:
+        path.mkdir(exist_ok=exist_ok)
+    
+    return path  # Also returns the path so you can do: new_path = create_folder(basepath / 'foo')
 
 
 # ---------------------------

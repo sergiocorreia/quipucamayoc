@@ -1,5 +1,5 @@
 '''
-Wrapper around all PDF-related functions
+Internal document class for PDF-based books
 '''
 
 # ---------------------------
@@ -82,7 +82,7 @@ class PDF:
         if cache_folder is None:
             cache_folder = filename.parent / ('quipu-' + filename.stem[:20])
         else:
-            cache_folder = Path(cache_folder)
+            cache_folder = Path(cache_folder) / ('quipu-' + filename.stem[:20])
         if cache_folder.exists() and not cache_folder.is_dir():
             msg = f'Cannot create folder "{cache_folder}" (perhaps location already exists and is a file?)'
             error_and_exit(msg)
@@ -136,6 +136,7 @@ class PDF:
         table.add_row('Size', f'{self.size / 2 ** 20:<6.2f}MiB')
         table.add_row('Num pages', f'{self.num_pages}')
         table.add_row('Active pages', f'{self.first_page}-{self.last_page} ({self.last_page-self.first_page+1} pages)')
+        table.add_row('Cache folder', str(self.cache_folder))
         print()
         console.print(table)
         print()
@@ -147,29 +148,21 @@ class PDF:
             print_update(f'[PDF] Creating working directory: {self.cache_folder}')
 
         # Create subdirectories
-
-        if not self.cache_folder.is_dir():
-            if not self.cache_folder.parent.is_dir():
-                print(f'[ERROR] Cannot create cache_folder; parent folder does not exist: {self.cache_folder.parent}')
-                sys.exit(1)
-            robust_mkdir(self.cache_folder)
+        create_folder(self.cache_folder, exist_ok=True, check_parent=True, try_again=True)
 
         subdirs = ('tmp', 'img_raw', 'img_clean', 'watermarks', 'ocr', 'page_metadata', 'lines', 'done')
         for subdir in subdirs:
-            path = self.cache_folder / subdir
-            #print('   - (Re)creating folder:', path)
-            shutil.rmtree(path, ignore_errors = True)
-            robust_mkdir(path)
+            create_folder(self.cache_folder / subdir, delete_before=True, try_again=True)
 
         for dd in self.all_engines:
-            robust_mkdir(self.cache_folder / 'ocr' / dd)
+            create_folder(self.cache_folder / 'ocr' / dd, try_again=True)
 
         # GCV folders
         gcv_path = self.cache_folder / 'ocr' / 'gcv'
-        robust_mkdir(gcv_path / 'json')  # Raw JSON file is zipped and saved here
-        robust_mkdir(gcv_path / 'pickle')  # JSON file converted to Page() object and pickled
-        robust_mkdir(gcv_path / 'output')  # tab-separated output
-        robust_mkdir(gcv_path / 'debug')  # debugging results
+        create_folder(gcv_path / 'json', try_again=True)  # Raw JSON file is zipped and saved here
+        create_folder(gcv_path / 'pickle', try_again=True)  # JSON file converted to Page() object and pickled
+        create_folder(gcv_path / 'output', try_again=True)  # tab-separated output
+        create_folder(gcv_path / 'debug', try_again=True)  # debugging results
         
         # Save info to YAML
         fn = self.cache_folder / 'info.yaml'
@@ -221,7 +214,7 @@ class PDF:
         path = self.cache_folder / 'img_raw' / 'image'
         
         if verbose:
-            print_update('Extracting images from pages')
+            print_update(f'Extracting images from {last_page-first_page+1} pages')
         msg = ' [green]- Running pdfimage            '
         for page in track(range(first_page, last_page+1), description=msg):
             ## # Skip if cache and final image already exists
@@ -331,10 +324,7 @@ class PDF:
 
 
     def _merge_page(self, page, image_fns, new_fn):
-        tmp_path = self.cache_folder / 'tmp' / str(page)
-        shutil.rmtree(tmp_path, ignore_errors = True) # Delete in case it already exists
-        tmp_path.mkdir() # exist_ok = False
-
+        tmp_path = create_folder(self.cache_folder / 'tmp' / str(page), delete_before=True)
         path = str(tmp_path / 'dump')  # Add filename suffix
         self.poppler.get_page_info(self, filename, path, page, verbose=verbose)
 

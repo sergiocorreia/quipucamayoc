@@ -21,6 +21,7 @@ import rich
 
 from .page import Page
 from .pdf import PDF
+from .folder import Folder
 from .utils import *
 
 
@@ -39,15 +40,16 @@ class Document:
         self.source = Path(filename)
         self.is_pdf = self.source.suffix == '.pdf'
         if not self.is_pdf and not self.source.is_dir():
-            rich.print(f'[ERROR] Expected a PDF filename or a folder, but received: {self.source}')
-            sys.exit(1)
+            msg = f'[ERROR] Expected a PDF filename or a folder, but received: {self.source}'
+            error_and_exit(msg)
 
         if self.is_pdf:
             self.core = PDF(self.source, cache_folder, use_cache, poppler_path, verbose)
         else:
-            raise NotImplementedError
+            self.core = Folder(self.source, cache_folder, use_cache, verbose)
 
         self.cache_folder = self.core.cache_folder  # Duplicate for convenience
+        self.status = {'cleaned': False}
 
 
     def describe(self):
@@ -62,9 +64,14 @@ class Document:
         if self.is_pdf:
             self.core.delete_watermarks(verbose, debug)
             self.core.combine_images(verbose, debug)
+            self.status['cleaned'] = True
+        else:
+            pass # Not needed
 
 
     def initialize_pages(self, verbose=False):
+        if self.is_pdf:
+            assert self.status['cleaned'], 'Run cleanup_images() before initialize_pages()'
         path = self.cache_folder / 'img_clean'
         fns = path.glob('page-*')
         pages = dict()
