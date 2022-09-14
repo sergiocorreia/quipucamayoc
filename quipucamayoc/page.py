@@ -24,7 +24,10 @@ TODO:
 ##from operator import attrgetter
 
 import cv2
+import  cv2.ximgproc
 import numpy as np
+from rich.console import Console
+from rich.table import Table
 ##from PIL import Image, ImageDraw, ImageFont  # Pillow!
 
 # Only installed with pip install quipucamayoc[dev]
@@ -41,9 +44,11 @@ except ImportError:
 from .utils import *
 from .image_utils import *
 
-
 from .DewarpNet import DewarpNet
 from .DocTr import DocTr
+
+from ocr_aws import run as run_ocr_aws
+
 
 # ---------------------------
 # Constants
@@ -76,6 +81,71 @@ class Page:
         self.doc = doc
 
 
+    def describe(self):
+        if self.image is None: error_and_exit('image not loaded')
+        
+        shape = self.image.shape
+        assert len(shape) in (2, 3)
+        height = shape[0]
+        width = shape[1]
+        is_color = image_is_color(self.image)
+        size = f'{self.image.size//1024}KB'
+        
+        if (height * 4 % 300 == 0) and (width * 4 % 300 == 0):
+            dpi = '300'
+        elif (height * 4 % 72 == 0) and (width * 4 % 72 == 0):
+            dpi = '72'
+        else:
+            dpi = 'unknown'
+
+        ratio = height / width
+        page_ratios = {'Arch A': 1.3333, 'Letter': 1.2941, 'Letter Wide': 0.7727, 'Legal': 1.6471, 'Legal Wide': 0.6071, 'A3': 1.4141, 'A4': 1.4143, 'A4 Wide': 0.7071, 'A5': 1.4189, 'B4': 1.4163, 'B4 Wide': 0.7060, 'B5': 1.4121, 'Folio': 1.5294, 'Ledger': 0.6471, 'Tabloid': 1.5455, 'Quarto': 1.2791, 'Short': 1.2353, 'Statement': 1.5455, 'Stationery': 1.2500}
+        candidate = sorted([(abs(v-ratio), k) for k, v in page_ratios.items()])[0]
+        if candidate[0] > 0.05:
+            page_size = 'unknown'
+        else:
+            page_size = f'{candidate[1]} (err={candidate[0]:3.1f})'
+
+        console = Console()
+        table = Table(show_header=True, header_style="bold cyan dim", title='Page Metadata', style='cyan dim')
+        table.add_column("Key", min_width=14, style='cyan')
+        table.add_column("Value", justify="left", style='cyan')
+        table.add_row('Page number', str(self.pagenum))
+        table.add_row('Dimension', f'{height}x{width} ({ratio:5.4})')
+        table.add_row('Color', str(is_color))
+        table.add_row('Size', size)
+        table.add_row('Dtype', str(self.image.dtype))
+        table.add_row('DPI guess', dpi)
+        table.add_row('Page size guess', page_size)
+        #if self.title:
+        #    table.add_row('Title', self.title)
+        #if self.author:
+        #    table.add_row('Author', self.author)
+        #if self.creator:
+        #    table.add_row('Creator', self.creator)
+        #if self.producer:
+        #    table.add_row('Producer', self.producer)
+        #if self.creation_date:
+        #    table.add_row('Creation date', self.creation_date)
+        #table.add_row('Size', f'{self.size / 2 ** 20:<6.2f}MiB')
+        #table.add_row('Num pages', f'{self.num_pages}')
+        #table.add_row('Active pages', f'{self.first_page}-{self.last_page} ({self.last_page-self.first_page+1} pages)')
+        #table.add_row('Cache folder', str(self.cache_folder))
+        print()
+        console.print(table)
+        print()
+
+
+    def is_grayscale(self):
+        if self.image is None: error_and_exit('image not loaded')
+        return image_is_grayscale(self.image)
+
+
+    def convert_to_grayscale(self):
+        if self.image is None: error_and_exit('image not loaded')
+        self.image = convert_image_to_gray(self.image)
+
+
     def load(self):
         self.image = cv2.imread(str(self.filename), cv2.IMREAD_UNCHANGED) #cv2.IMREAD_ANYDEPTH)
 
@@ -85,6 +155,7 @@ class Page:
 
 
     def save(self, debug_name=None, verbose=False, debug=False):
+        if self.image is None: error_and_exit('image not loaded')
         # debug_name allows us to save it to a different location for comparison/debugging purposes
         filename = (self.doc.cache_folder / debug_name) if debug_name is not None else self.filename
         if verbose:
@@ -94,16 +165,25 @@ class Page:
 
     def view(self, wait=0):
         '''View image and optionally close it after 'wait' milliseconds'''
-        view_image(self.image, wait)
+        if self.image is None: error_and_exit('image not loaded')
+        if is_notebook():
+            from IPython.display import display
+            from PIL import Image
+            display(Image.fromarray(self.image))
+        else:
+            view_image(self.image, wait)
 
 
     def rotate(self, angle=-90, verbose=False, debug=False):
+        if self.image is None: error_and_exit('image not loaded')
         if verbose:
             print_update(f' - Rotating page {angle} degrees')
         self.image = self.image.rotate(angle, expand=True)
 
 
     def remove_black_background(self, threshold_parameter=25, verbose=False, debug=False):
+        if self.image is None: error_and_exit('image not loaded')
+
         # TODO: either allow for custom min/max area/aspect ratios, or improve defaults
         
         if verbose:
@@ -114,7 +194,7 @@ class Page:
             debug_save(self.image, debug_path, 0)
 
         # 1) Ensure the input is in grayscale
-        im = convert_to_gray(self.image)
+        im = convert_image_to_gray(self.image)
         height, width = im.shape[:2]
         page_area = height * width
         if debug:
@@ -168,6 +248,7 @@ class Page:
 
 
     def remove_fore_edges(self, threshold_parameter=160, verbose=False, debug=False):
+        if self.image is None: error_and_exit('image not loaded')
 
         if verbose:
             print_update(f' - Removing fore edges of page {self.pagenum}')
@@ -177,7 +258,7 @@ class Page:
             debug_save(self.image, debug_path, '0-original')
 
         # 1) Gray version
-        im = convert_to_gray(self.image)
+        im = convert_image_to_gray(self.image)
         height, width = im.shape[:2]
         page_area = height * width
         #im = self.image[:,:,0]  # Extract a single channel from BGR # OFTEN USING A SINGLE CHANNEL (BLUE) IS BETTER WITH YELLOWISH DOCUMENTS
@@ -348,6 +429,7 @@ class Page:
 
         method = method.lower()  # Allows for DewarpNet, DocTr, etc.
         assert method in ('simple', 'dewarpnet', 'doctr')
+        if self.image is None: error_and_exit('image not loaded')
 
         if verbose:
             print_update(f' - Dewarping page {self.pagenum} (method={method})')
@@ -389,7 +471,7 @@ class Page:
         if debug:
             debug_path = self.doc.cache_folder / 'tmp' / 'dewarp'  # Folder already created by dewarp()
 
-        im = convert_to_gray(self.image)
+        im = convert_image_to_gray(self.image)
         height, width = im.shape[:2]
         page_area = height * width
 
@@ -448,3 +530,124 @@ class Page:
         #    print_update(f'   - New page area is the same as old; [red]stopping')
         #    return
 
+
+    def equalize(self, method='clahe',
+            clip_limit=2, tile_grid_size=8,
+            verbose=False, debug=False):
+        '''Equalize grayscale image to improve its contrast
+
+        Methods: 
+        - Simple
+        - CLAHE
+        '''
+
+        method = method.lower()
+        assert method in ('simple', 'clahe')
+        if self.image is None: error_and_exit('image not loaded')
+        if not self.is_grayscale(): error_and_exit('image must be in grayscale before equalizing; use .convert_to_grayscale()')
+
+        if verbose:
+            print_update(f' - Equalizing page {self.pagenum} (method={method})')
+
+        if debug:
+            debug_path = create_folder(self.doc.cache_folder / 'tmp' / 'equalize', delete_before=True, try_again=True)
+            plt.hist(self.image.ravel(), 256, [0,256])
+            plt.savefig(debug_path / 'histogram-original.pdf')
+            plt.clf()
+            debug_save(self.image, debug_path, '0-original')
+
+        if method == 'simple':
+            self.image = cv2.equalizeHist(self.image)
+        elif method == 'clahe':
+            # https://en.wikipedia.org/wiki/Adaptive_histogram_equalization#Contrast_Limited_AHE
+            clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid_size, tile_grid_size))
+            self.image = clahe.apply(self.image)
+        else:
+            raise Exception
+
+        if debug:
+            plt.hist(self.image.ravel(), 256, [0,256])
+            plt.savefig(debug_path / f'histogram-{method}.pdf')
+            plt.clf()
+            debug_save(self.image, debug_path, f'1-{method}')
+
+
+    def binarize(self, method='wolf',
+            threshold=128,
+            block_size=11, k=0.1,
+            verbose=False, debug=False):
+        '''Binarize grayscale image to improve its contrast
+
+        Methods: 
+        - Simple or Threshold
+        - Otsu
+        - Adaptive mean (adaptive)
+        - Sauvola
+        - Wolf
+        '''
+
+        method = method.lower()
+        if method == 'simple': method == 'threshold'
+        assert method in ('threshold', 'otsu', 'adaptive', 'sauvola', 'wolf')
+
+        if self.image is None: error_and_exit('image not loaded')
+        if not self.is_grayscale(): error_and_exit('image must be in grayscale before equalizing; use .convert_to_grayscale()')
+
+        if verbose:
+            print_update(f' - Binarizing page {self.pagenum} (method={method})')
+
+        if debug:
+            debug_path = create_folder(self.doc.cache_folder / 'tmp' / 'binarize', delete_before=True, try_again=True)
+            debug_save(self.image, debug_path, '0-original')
+
+        if method == 'threshold':
+            _, self.image = cv2.threshold(self.image, threshold_parameter, 255, cv2.THRESH_BINARY)
+        elif method == 'otsu':
+            _, self.image = cv2.threshold(self.image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)  # Doesn't work that well
+        elif method == 'adaptive':
+            # https://stackoverflow.com/questions/28763419/adaptive-threshold-parameters-confusion/28764902
+            # https://docs.opencv.org/2.4/modules/imgproc/doc/miscellaneous_transformations.html
+            # blockSize – Size of a pixel neighborhood that is used to calculate a threshold value for the pixel: 3, 5, 7, and so on.
+            # C – Constant subtracted from the mean or weighted mean (see the details below). Normally, it is positive but may be zero or negative as well.
+            
+            # Two alternatives: adaptive GAUSSIAN and adaptive MEAN
+            #self.image = cv2.adaptiveThreshold(self.image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,3,5)
+            self.image = cv2.adaptiveThreshold(self.image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,3,5)
+        elif method == 'sauvola':
+            # https://shimat.github.io/opencvsharp_docs/html/9b2f295b-eb64-b5e8-ba39-33cbe88d5b4e.htm
+            # blockSize: Size of a pixel neighborhood that is used to calculate a threshold value for the pixel: 3, 5, 7, and so on.
+            # k: The user-adjustable parameter used by Niblack and inspired techniques.For Niblack, this is normally a value between 0 and 1 that is multiplied with the standard deviation and subtracted from the mean.
+            self.image = cv2.ximgproc.niBlackThreshold(self.image,
+                    maxValue=255,
+                    type=cv2.THRESH_BINARY_INV,
+                    blockSize=block_size,
+                    k=k,
+                    binarizationMethod=cv2.ximgproc.BINARIZATION_SAUVOLA)
+            self.image = (255 - self.image)
+        elif method == 'wolf':
+            self.image = cv2.ximgproc.niBlackThreshold(self.image,
+                    maxValue=255,
+                    type=cv2.THRESH_BINARY_INV,
+                    blockSize=block_size,
+                    k=k,
+                    binarizationMethod=cv2.ximgproc.BINARIZATION_WOLF)
+            self.image = (255 - self.image)
+        else:
+            raise Exception
+
+        if debug:
+            debug_save(self.image, debug_path, f'1-{method}')
+
+
+    def ocr(self, engine=None, extract_tables=False, verbose=False, debug=False):
+
+        if engine is None: error_and_exit('you must specify an OCR engine (aws, gcv, etc.)')
+        engine = engine.lower()
+        if engine in  ('amazon', 'textract'): engine = 'aws'
+        if engine in  ('google', 'visionai', 'cloudvision'): engine = 'gcv'
+        if not engine in ('aws', 'gcv'): error_and_exit(f'engine {engine} is unsupported; supported engines are: aws, gcv')
+
+        if engine == 'aws':
+            run_ocr_aws(self.image, extract_tables=extract_tables, verbose=verbose, debug=debug)
+        else:
+            raise Exception

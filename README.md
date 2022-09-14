@@ -26,7 +26,7 @@ If you want to contribute by improving the code or extending its functionality (
 To manage quipucamayoc using pip, open the command line and run:
 
 - `pip install quipucamayoc` to install
-    - `pip install "quipucamayoc[dev]"` to include extra dependencies used when developing the code
+    - `pip install quipucamayoc[dev]` to include extra dependencies used when developing the code
 - `pip install -U quipucamayoc` to upgrade
 - `pip uninstall quipucamayoc` to remove
 
@@ -37,7 +37,7 @@ Note that `quipucamayoc` has been tested against Python 3.10 and newer versions,
 After cloning the repo to your computer and navigating to the quipucamayoc folder, run:
 
 - `pip install .` to install the package locally
-- `pip install -e .` to install locally with a symlink so changes are automatically updated (recommended for developers)
+- `pip install --no-cache-dir --editable .[dev]` to install locally with a symlink so changes are automatically updated (recommended for developers)
 
 
 ## After installation

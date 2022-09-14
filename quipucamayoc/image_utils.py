@@ -55,23 +55,29 @@ def get_area(rectangle):
     return w * h
 
 
-def convert_to_gray(image):
+def image_is_color(image):
+    assert len(image.shape) in (2, 3)
+    return len(image.shape) == 3
+
+
+def image_is_grayscale(image):
+    return not image_is_color(image)
+
+
+def convert_image_to_gray(image):
     '''Convert input to grayscale if it is not already so'''
-    is_grayscale = len(image.shape) == 2
-    return image.copy() if is_grayscale else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image_is_color(image) else image.copy()
 
 
 def convert_gray_to_bgr(image):
     '''Convert input from grayscale to BGR color'''
-    is_grayscale = len(image.shape) == 2
-    assert is_grayscale
+    assert image_is_grayscale(image)
     return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
 
 def convert_bgr_to_rgb(image):
     '''Convert input from BGR to RGB'''
-    is_grayscale = len(image.shape) == 2
-    assert not is_grayscale
+    assert image_is_color(image)
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 
@@ -96,6 +102,7 @@ def order_points(pts):
     rect[3] = pts[np.argmax(diff)]
     # return the ordered coordinates
     return rect
+
 
 def four_point_transform(image, pts):
     # https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example/#download-the-code
