@@ -44,20 +44,21 @@ After cloning the repo to your computer and navigating to the quipucamayoc folde
 
 ### AWS
 
-AWS configuration is quite cumbersome, so it has been automated. To do so, follow these four steps:
+`quipucamayoc` can use AWS's `Textract` to OCR text and tables. Its configuration is quite cumbersome, so it has been automated for you. To do so, first install `quipucamayoc` and then follow these steps to specify your credentials:
 
-1. [Download](https://aws.amazon.com/cli/) and install the `aws` command line interface (CLI).  *Update: `quipucamayoc` installs the `awscli` package so this step might not be necessary anymore*.
-2. [Configure](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html) your credentials with `aws configure`. This requires an Amazon/AWS account.
-3. From the command line, run the quipucamayoc command `quipu aws install`
-
+1. Ensure you have an [Amazon AWS account](https://aws.amazon.com/).
+  - AWS Textract prices are listed [here](https://aws.amazon.com/textract/pricing/). If you just created an account you should be able to use the [free tier](https://aws.amazon.com/free/). Otherwise, you might need to set up a [payment method](https://console.aws.amazon.com/billing/home#/paymentpreferences/paymentmethods).
+2. Now you need to create credentials so you can access AWS programmatically.
+  - The simplest method is to go to the [security credentials](https://console.aws.amazon.com/iam/home#security_credential) page (you can also go to it from the AWS console: click on your name on the top-right > click on security credentials). Then, ignore the security warning (see below), go the next page, scroll to Access Keys and click create an access key. Copy the `Access key` and `Secret access key` strings (akin to username and passwords).
+  - (*TODO*) Alternatively, AWS now recommends an alternative: instead of creating access keys for your user, create a new user with a more restricted access and then create an access key for this user. In this way, if you somehow lose your credentials (e.g. your computer is hacked) then hackers are limited in what they can do. To create an user, go to the [Identity and Access Management (IAM) console](https://console.aws.amazon.com/iam/home), and create a new user: Access Management > Users > Add Users. Select a name, press Next, then you need to attach certain policies (TODO: find out which policies are needed).
+3. [Download](https://aws.amazon.com/cli/) and install the `aws` command line interface (CLI).  *Update: `quipucamayoc` installs the `awscli` package so this step might not be necessary anymore*.
+4. Go to the command line, and type [`aws configure`](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html) to enter your credentials. You need to enter your `Access key` and `Secret Access Key` strings. The `Default region name` can be the [AWS region](https://www.concurrencylabs.com/blog/choose-your-aws-region-wisely/) of your preference (most likely, `aws-east-1`) or left empty. `Default output format` can be left empty.
+5. From the command line, you can now run the quipucamayoc command `quipu aws install`. This will setup your AWS account so you can use `Textract` programmatically (i.e., create an S3 bucket, an SNS topic, a SQS queue, a user with the required credentials, and then configure the user, bucket, topic, and queue so they can talk to each other.)
 
 Notes:
 
-- You can avoid step 1 by directly [writing your credentials[(https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)] to the `credentials` file.
-- Steps 3-4 are also available from within Python in the `setup_textract()` and `test_textract()` functions.
+- You can avoid steps 3-4 by directly [writing your credentials[(https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)] to the `credentials` file.
 - If you want to remove all quipucamayoc artifacts from your AWS account, you can run `quipu aws uninstall` from the command line.
-- The default [AWS region](https://www.concurrencylabs.com/blog/choose-your-aws-region-wisely/) is `aws-east-1`. To use other regions, use the `--region <name>` option.
-
 
 ## Usage
 
