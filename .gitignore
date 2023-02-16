@@ -16,3 +16,4 @@ __pycache__/
 /docs/_build/
 
 textract-*/
+*.quipu-cache*
