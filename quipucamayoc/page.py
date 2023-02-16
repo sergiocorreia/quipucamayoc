@@ -24,17 +24,17 @@ TODO:
 ##from operator import attrgetter
 
 import cv2
-import  cv2.ximgproc
+import cv2.ximgproc
 import numpy as np
 from rich.console import Console
 from rich.table import Table
 ##from PIL import Image, ImageDraw, ImageFont  # Pillow!
 
 # Only installed with pip install quipucamayoc[dev]
-try:
-    import matplotlib.pyplot as plt
-except ImportError:
-    pass
+#try:
+#    import matplotlib.pyplot as plt # Very slow so imported directly in function
+#except ImportError:
+#    pass
 
 ##from .textbox import TextBox
 ##from .textbox_utils import is_garbage, fix_garbage, concatenate_words, concatenate_lines
@@ -43,11 +43,10 @@ except ImportError:
 
 from .utils import *
 from .image_utils import *
+# from .DewarpNet import DewarpNet # Very slow so imported directly in function
+# from .DocTr import DocTr # Very slow so imported directly in function
 
-from .DewarpNet import DewarpNet
-from .DocTr import DocTr
-
-from ocr_aws import run as run_ocr_aws
+from .ocr_aws import run as run_ocr_aws
 
 
 # ---------------------------
@@ -269,6 +268,8 @@ class Page:
         # https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_histograms/py_histogram_begins/py_histogram_begins.html
         # cv2.calcHist(images, channels, mask, histSize, ranges[, hist[, accumulate]])
         if debug:
+            import matplotlib.pyplot as plt # Only installed with pip install quipucamayoc[dev]
+            
             #hist = cv2.calcHist([im], [0], None, [256], [0,256])
             hist = np.bincount(im.ravel(), minlength=256)
             hist_fn = debug_path / 'histogram.txt'
@@ -443,10 +444,12 @@ class Page:
         elif method == 'dewarpnet':
             if model_path is None:
                 error_and_exit('model_path is None')
+            from .DewarpNet import DewarpNet # Import here to avoid slowing down the main code
             dewarped, ok = DewarpNet(self.image, model_path, self.doc.models, verbose=verbose, debug=debug)
         elif method == 'doctr':
             if model_path is None:
                 error_and_exit('model_path is None')
+            from .DocTr import DocTr
             dewarped, ok = DocTr(self.image, model_path, self.doc.models, rectify_illumination=rectify_illumination, verbose=verbose, debug=debug)
         else:
             raise Exception
@@ -639,7 +642,7 @@ class Page:
             debug_save(self.image, debug_path, f'1-{method}')
 
 
-    def ocr(self, engine=None, extract_tables=False, verbose=False, debug=False):
+    def run_ocr(self, engine=None, extract_tables=False, verbose=False, debug=False):
 
         if engine is None: error_and_exit('you must specify an OCR engine (aws, gcv, etc.)')
         engine = engine.lower()
@@ -648,6 +651,6 @@ class Page:
         if not engine in ('aws', 'gcv'): error_and_exit(f'engine {engine} is unsupported; supported engines are: aws, gcv')
 
         if engine == 'aws':
-            run_ocr_aws(self.image, extract_tables=extract_tables, verbose=verbose, debug=debug)
+            run_ocr_aws(self, extract_tables=extract_tables, verbose=verbose, debug=debug)
         else:
             raise Exception
