@@ -65,7 +65,11 @@ class QUIPU:
         self.account_id = boto3.resource('iam').CurrentUser().arn.split(':')[4]
         self.topic_arn = f'arn:aws:sns:{self.region}:{self.account_id}:{self.topic}'
         self.role_arn = f'arn:aws:iam::{self.account_id}:role/{self.role}'
-        self.queue_url = f'https://queue.amazonaws.com/{self.account_id}/{self.queue}'
+
+        # URL for queues (changed in late 2022)
+        # See: https://docs.aws.amazon.com/general/latest/gr/sqs-service.html
+        self.queue_url = f'https://sqs.{self.region}.amazonaws.com/{self.account_id}/{self.queue}'
+
         
         self.queue_arn = None
         self.subscription_arn = None
@@ -267,7 +271,7 @@ def create_sqs_queue(quipu, sqs_client, logger):
     r = sqs_client.create_queue(QueueName=quipu.queue)
 
     # Fetch queue URL and ARN
-    assert quipu.queue_url == r['QueueUrl']
+    assert quipu.queue_url == r['QueueUrl'], (quipu.queue_url, r['QueueUrl'])
     r = sqs_client.get_queue_attributes(QueueUrl=quipu.queue_url, AttributeNames=['QueueArn'])
     quipu.queue_arn = r['Attributes']['QueueArn']
     logger.info(f'  - SQS queue ARN = "{quipu.queue_arn}"')
